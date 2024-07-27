@@ -1,22 +1,25 @@
-import os
-import whisper
-
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
-from deep_translator import GoogleTranslator
 
+from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
 from colorama import Fore, Style, init
 from datetime import datetime
+from os import getenv, remove
+from time import sleep
 
 from api import mail, gmail_modify
+from function import ok, groq_answer, speech_recognition, sql_launch
 
 
 init()
 load_dotenv()
-bot_token = os.getenv('BOT_TOKEN')
-admin_id = os.getenv('ADMIN_ID')
+
+
+bot_token = getenv('BOT_TOKEN')
+groq_api_key = getenv('GROQ_API_KEY')
+admin_id = getenv('ADMIN_ID')
 
 
 bot = Bot(token=bot_token)
@@ -25,21 +28,15 @@ dp = Dispatcher()
 
 
 
-def ok(green_text: str, normal_text: str = '') -> str:
-    return f'{Fore.GREEN}{green_text}{Style.RESET_ALL}{normal_text}'
+def mail_message():
+    text, dict_of_unread = mail()
 
+    inline_keyboard = []
+    if dict_of_unread:        
+        inline_keyboard.append([InlineKeyboardButton(text=str(index), callback_data=f'mail_modify-{index}-{message_id}') for index, message_id in dict_of_unread.items()])
+        inline_keyboard.append([InlineKeyboardButton(text='Translate', callback_data='translate')]) # callback.message.text
 
-def speech_recognition(file_name: str) -> str:
-
-    model = whisper.load_model('base') 
-    result = model.transcribe(file_name)
-
-
-    text = result['text']
-
-    print(ok(green_text='function: speech_recognition', normal_text=f'(text)'))
-
-    return text
+    return text, InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 
 async def download_file_for_id(file_id, extension):
@@ -54,22 +51,6 @@ async def download_file_for_id(file_id, extension):
     print(ok('function: download_file_for_id', file_name))
 
     return file_name
-
-
-def mail_message():
-    text, dict_of_unread = mail()
-
-    inline_keyboard = []
-    if dict_of_unread:        
-        inline_keyboard.append([InlineKeyboardButton(text=str(index), callback_data=f'mail_modify-{index}-{message_id}') for index, message_id in dict_of_unread.items()])
-        inline_keyboard.append([InlineKeyboardButton(text='Translate', callback_data='translate')]) # callback.message.text
-
-    print(ok('function: mail_message', f'({len(dict_of_unread)})'))
-    return text, InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
-    
-
-
-
 
 
 @dp.callback_query(F.data.startswith('mail_modify-'))
@@ -101,7 +82,6 @@ async def callback_mail_modify(callback: CallbackQuery):
 
     await callback.message.edit_text(text=text, reply_markup=reply_markup)
 
-    print(ok(f'callback: callback_mail_modify', f'({index})'))
 
     await callback.answer()
     
@@ -115,8 +95,6 @@ async def callback_translate(callback: CallbackQuery):
     translated_text = GoogleTranslator(source='en', target='ru').translate(text)
     
     await callback.message.edit_text(text=translated_text, reply_markup=reply_markup)
-    
-    print(ok(f'callback: translate'))
 
     await callback.answer()
 
@@ -130,8 +108,6 @@ async def command_mail(message: Message) -> None:
     text, inline_keyboard = mail_message()
 
     await bot.send_message(chat_id=message.chat.id, text=text, reply_markup=inline_keyboard, parse_mode='Markdown')
-
-    print(ok('command: mail'))
 
 
 
@@ -147,34 +123,32 @@ async def message_handler(message: Message) -> None:
 
 
     if message.voice:
-
+        
         file_name = await download_file_for_id(file_id=message.voice.file_id, extension='mp3')
 
-        text = speech_recognition(file_name=file_name)
-
-        os.remove(file_name)
+        text = speech_recognition(file_name=file_name).strip()
+        await message.reply(text)
+        remove(file_name)
 
     else:
         text = message.text
 
     text = text.lower()
 
-    if 'mail' in text or 'почт' in text:
-        await message.answer('Just a moment...')  # TODO: temporary response will be generated while processing is in progress
+    answer = groq_answer(text)
 
-        mail_text, inline_keyboard = mail_message()
-
-        await bot.send_message(chat_id=chat_id, text=mail_text, reply_markup=inline_keyboard, parse_mode='Markdown')
-        
-        await bot.delete_message(chat_id=chat_id, message_id=message_id+1)
-        
-    else:
-        await message.answer('In development')
+    for paragraph  in answer.split('\n'):
+        try:
+            await message.answer(paragraph)
+            sleep(0.75)
+        except:
+            pass
 
     print(ok(f'Message: {text}'))
 
 
 
 if __name__ == '__main__':
+    sql_launch()
     print(ok('Bot is launched'))
     dp.run_polling(bot)
