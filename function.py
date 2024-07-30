@@ -1,88 +1,87 @@
 import sqlite3
 import whisper
 
-
-from dotenv import load_dotenv
 from colorama import Fore, Style, init
-from groq import Groq
-from datetime import datetime
-# from vectordb import Memory
+from datetime import datetime, timedelta, timezone
+from vectordb import Memory
 from os import getenv
+from re import sub
 
-from config import LOCAL_WHISPER
+from config import LOCAL_WHISPER, system_promt, guiding_promt
+from api import get_events, llm_api
 
-
+from pprint import pprint
 init()
-load_dotenv()
+
+memory = Memory()
 
 
-groq_api_key = getenv('GROQ_API_KEY')
+def print_green(green_text: str, normal_text: str = ''):
+    print(f'{Fore.GREEN}{green_text}{Style.RESET_ALL}{normal_text}')
 
 
-# memory = Memory()
-client = Groq(api_key=groq_api_key)
+def print_red(red_text: str, normal_text: str = '') -> str:
+    print(f'{Fore.RED}{red_text}{Style.RESET_ALL}{normal_text}')
 
 
+def llm_guiding_answer(user_message: str):
 
-def ok(green_text: str, normal_text: str = '') -> str:
-    return f'{Fore.GREEN}{green_text}{Style.RESET_ALL}{normal_text}'
+    promt = guiding_promt + user_message
 
+    role, content, time = sql_select(n=3)
+    messages = []
 
-def groq_answer(user_message: str) -> str:
+    for i in range(len(role)):
+        messages.append({'role': role[i], 'content': content[i]})
+    messages.append({"role": "system", "content": promt})
+    messages.append({"role": "user", "content": user_message})
     
-    """
-    guiding_promt = f\"""You're the chatbot's assistant. You have to choose a number from 0-5. 0 if the answer does not require any sources (just chatting). 
-                        1 if the answer requires a memory search (vector database). 2 if the answer requires a Google calendar query. 
-                        3 - If the answer requires a query in todolist (tasks). 4 - If an email query is required. 
-                        The answer MUST consist ONLY of a digit. User message: {user_message}\"""
-    
-    guiding_response = client.chat.completions.create(
-    messages=[{"role": "system", "content": guiding_promt}],
-    model="llama-3.1-8b-instant")
-    
-    response_direction = [None, 'Memory', 'Calendar', 'Todoist', 'Email'][int(guiding_response.choices[0].message.content)]
-    print('groq_answer: response_direction =', response_direction)
-    """
+    print('llm_guiding: ', end='')
+    pprint(messages)
+    for _ in range(3):
+        try:
+            response = llm_api(messages=messages, fast_model=True)
+            response = [None, 'Memory', 'Calendar', 'Todoist', 'Email'][int(response)]
+            print_green(green_text='function: llm_guiding_answer. ', normal_text=response)
+            return response
+        
+        except Exception as e:
+            print_red(red_text=f'function: llm_guiding_answer. Error: {e}')
 
-    messages = sql_select()
+    return None
 
-    messages.append({'role': 'user', 'content': user_message})
+def llm_answer(user_message: str) -> str:
 
+    guiding_responce = llm_guiding_answer(user_message)  # by promt returns a number between 1 and 5
+    response_direction = guiding_responce
 
+    memory.save([user_message], {'role': 'user', 'time': datetime.now()})
 
-    response = client.chat.completions.create(messages=messages, model="llama-3.1-70b-versatile").choices[0].message.content
+    if response_direction == 'Memory':
+        memory_results = memory_search(user_message)
+        user_message += f'\n\n((system: Vector database search results (may be useless): {memory_results}))'
+
+    elif response_direction == 'Calendar':
+        user_message += f'\n\n((system: Google calendar timetable for day (it\'s {datetime.now()}): {get_events()}))'
+
 
     sql_incert('user', user_message)
+
+
+    role, content, time = sql_select(n=6)
+
+    messages = [{'role': 'system', 'content': system_promt}]
+    for i in range(len(role)):
+        messages.append({'role': role[i], 'content': content[i]})
+    
+    pprint(messages)
+    response = llm_api(messages=messages)
+
     sql_incert('assistant', response)
     
-    print(response)
+    print_green('function: llm_answer')
     
     return response
-
-
-def speech_recognition(file_name: str) -> str:
-
-    if LOCAL_WHISPER:
-        
-        model = whisper.load_model('base') 
-        result = model.transcribe(file_name)
-
-
-        text = result['text']
-
-    else:
-
-        with open(file_name, "rb") as file:
-            translation = client.audio.transcriptions.create(
-            file=(file_name, file.read()),
-            model="whisper-large-v3")
-            
-            text = translation.text
-
-    print(ok(green_text='function: speech_recognition', normal_text=f'({text})'), LOCAL_WHISPER)
-
-    return text
-
 
 
 def sql_launch():
@@ -96,26 +95,40 @@ def sql_launch():
         time Text
         )
         ''')
-    
-    if cursor.execute(f'SELECT * FROM History').fetchall() == []:
-        promt = 'You are a useful ai assistant with access to various services, but mostly play the role of a pleasant conversationalist. Your creator and the person you are communicating with is called Boris'
-        cursor.execute("INSERT INTO History (role, content, time) VALUES (?, ?, ?)", ('system', promt, str(datetime.now())))
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS Setting (
+        variable TEXT,
+        value TEXT,
+        description Text
+        )
+        ''')
 
     connection.commit()
     connection.close()
 
 
-def sql_select(n: int = 6):
+def sql_select(n=6):
     connection = sqlite3.connect('assistant.db') 
     cursor = connection.cursor()
 
-    row = cursor.execute(f'SELECT * FROM History').fetchall()[-n:]
+    row = cursor.execute(f'SELECT * FROM History').fetchall()
 
-    messages = [{'role': i[0], 'content': i[1]} for i in row]
+    if n == '*':
+        row = cursor.execute(f'SELECT * FROM History').fetchall()
+    else:
+        row = cursor.execute(f'SELECT * FROM History ORDER BY time LIMIT {n}').fetchall()
+
+    role, content, time = [], [], []
+
+    for rows in row:
+        role.append(rows[0])
+        content.append(rows[1])
+        time.append(rows[2])
+
 
     connection.close()
 
-    return messages
+    return role, content, time
 
 
 def sql_incert(role: str, content: str):
@@ -129,3 +142,34 @@ def sql_incert(role: str, content: str):
     connection.close()
 
 
+def memory_load():
+
+    role, content, time = sql_select(n='*')
+
+    if role == []:
+        return
+    
+    metadata = [{'role': i_role, 'time': i_time} for i_role, i_time in zip(role, time)]
+
+    # re.sub(r'\{{\{.*?\}}\}}', '', text) - removes all text between ((system: and )) 
+    content = [sub(r'\(\(system: .*?\)\)', '', i) for i in content]
+
+    memory.save(
+        texts=content,
+        metadata=metadata
+    )
+
+    print_green('function: memory_load')
+
+
+def memory_search(query: str, n:int = 2):
+    result = memory.search(query, top_n = n)
+    # f'{role} {time}: {chunk}'. time: YYYY-MM-DD HH:MM:SS
+    pretty_result = [f'{i["metadata"]["role"]} {i["metadata"]["time"][:10]}: {i["chunk"]}' for i in result]  
+    print_green('function: memory_search. ', pretty_result)
+
+    return pretty_result
+
+
+sql_launch()
+memory_load()
