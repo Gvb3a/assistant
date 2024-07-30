@@ -1,17 +1,83 @@
-import os.path
+import os
+import requests
+import whisper
+from groq import Groq
+from ollama import chat
+from beautiful_date import D, days, hours
+from colorama import Fore, Style, init
+from dotenv import load_dotenv
+from random import choice
+
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-import requests
 
-from colorama import Fore, Style, init
+from gcsa.google_calendar import GoogleCalendar
+from gcsa.event import Event
+
+from config import LOCAL_WHISPER, LOCAL_LLM
+
 init()
+load_dotenv()
 
 
 number_of_accounts = 3
-TOKEN_FILES = [f'token_{i}.json' for i in range(number_of_accounts)]
-CREDENTIALS_FILE = 'client_secret.json'
+path = os.path.dirname(os.path.abspath(__file__))
+
+groq_api_key = os.getenv('GROQ_API_KEY')
+client = Groq(api_key=groq_api_key)
+
+TOKEN_FILES = [f'{path}\\token_{i}.json' for i in range(number_of_accounts)]
+CREDENTIALS_FILE = f'{path}\\client_secret.json'
+
+calendar = GoogleCalendar(credentials_path=CREDENTIALS_FILE)
+
+
+def llm_api(messages: list, model: str = None, fast_model: str = False):
+
+    if fast_model and model is None:
+        model = 'qwen2:1.5b' if LOCAL_LLM else 'llama-3.1-8b-instant'
+    elif model is None:
+        model = 'phi3' if LOCAL_LLM else 'llama-3.1-70b-versatile'
+
+    return ollama_api(messages, model) if LOCAL_LLM else groq_api(messages, model)
+
+
+def groq_api(messages: list, model: str = 'llama-3.1-70b-versatile'):
+    response = client.chat.completions.create(
+            messages=messages,
+            model=model)
+    return response.choices[0].message.content
+
+
+def ollama_api(messages: list, model: str = 'phi3'):
+    response = chat(model=model, 
+                    messages=messages)
+    return response['message']['content']
+
+
+def speech_recognition(file_name: str) -> str:
+
+    if LOCAL_WHISPER:
+        
+        model = whisper.load_model('base') 
+        result = model.transcribe(file_name)
+
+        text = result['text']
+
+    else:
+
+        with open(file_name, "rb") as file:
+            translation = client.audio.transcriptions.create(
+            file=(file_name, file.read()),
+            model="whisper-large-v3")
+            
+            text = translation.text
+
+    print('function: speech_recognition. ', f'Recognised: {text.strip()}. LOCAL_WHISPER={LOCAL_WHISPER}')
+
+    return text.strip()
 
 
 def gmail_load_credentials() -> list:
@@ -159,3 +225,27 @@ def mail():
         result = 'No unread mail✅'
     
     return result, dict_of_unread
+
+
+def get_events(start_time=D.today(), duration: int = 1):
+    # returns a list of all events from start_time to end_time. duration in days
+    end_time = start_time + duration * days
+    events = calendar[start_time:end_time:'startTime']
+
+    return [f'{event.summary}: {event.start} to {event.end}' for event in events]
+
+
+def add_event_without_time(summary: str = '(No title)', start = D.today(), duration: int = 1):
+    # by 'without time' we mean an all-day event. duration in days
+    end = start + duration * days
+    event = Event(summary, start=start, end=end)
+
+    return calendar.add_event(event)
+
+
+def add_event_with_time(summary: str = '(No title)', start = D.now(), duration: int = 1):
+    # Event with a specific time. duration in hours
+    end = start + duration * hours
+    event = Event(summary, start=start, end=end)
+
+    return calendar.add_event(event)
