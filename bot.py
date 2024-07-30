@@ -7,10 +7,9 @@ from dotenv import load_dotenv
 from colorama import Fore, Style, init
 from datetime import datetime
 from os import getenv, remove
-from time import sleep
 
-from api import mail, gmail_modify
-from function import ok, groq_answer, speech_recognition, sql_launch
+from api import mail, gmail_modify, speech_recognition
+from function import print_green, print_red, llm_answer
 
 
 init()
@@ -18,7 +17,6 @@ load_dotenv()
 
 
 bot_token = getenv('BOT_TOKEN')
-groq_api_key = getenv('GROQ_API_KEY')
 admin_id = getenv('ADMIN_ID')
 
 
@@ -47,8 +45,6 @@ async def download_file_for_id(file_id, extension):
     file_name = f'{now.strftime("%Y%m%d_%H%M%S")}.{extension}'
 
     await bot.download_file(file_path, file_name)
-
-    print(ok('function: download_file_for_id', file_name))
 
     return file_name
 
@@ -127,28 +123,22 @@ async def message_handler(message: Message) -> None:
         file_name = await download_file_for_id(file_id=message.voice.file_id, extension='mp3')
 
         text = speech_recognition(file_name=file_name).strip()
+
         await message.reply(text)
         remove(file_name)
 
     else:
         text = message.text
 
-    text = text.lower()
+    answer = llm_answer(text)
 
-    answer = groq_answer(text)
-
-    for paragraph  in answer.split('\n'):
-        try:
-            await message.answer(paragraph)
-            sleep(0.75)
-        except:
-            pass
-
-    print(ok(f'Message: {text}'))
+    try:
+        await message.answer(answer, parse_mode='Markdown')
+    except:
+        await message.answer(answer)
 
 
 
 if __name__ == '__main__':
-    sql_launch()
-    print(ok('Bot is launched'))
+    print_green('Bot is launched') 
     dp.run_polling(bot)
