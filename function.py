@@ -6,9 +6,10 @@ from datetime import datetime, timedelta, timezone
 from vectordb import Memory
 from os import getenv
 from re import sub
+from inspect import stack
 
-from config import LOCAL_WHISPER, system_promt, guiding_promt
-from api import get_events, llm_api
+from config import system_prompt, guiding_prompt, prompt_for_add, prompt_for_close_task
+from api import calendar_get_events, calendar_add_event, todoist_get_tasks, todoist_new_task, todoist_close_task, llm_api
 
 from pprint import pprint
 init()
@@ -16,71 +17,88 @@ init()
 memory = Memory()
 
 
-def print_green(green_text: str, normal_text: str = ''):
-    print(f'{Fore.GREEN}{green_text}{Style.RESET_ALL}{normal_text}')
+def print_colorama(text: str = None, color: str = 'green'):
 
-
-def print_red(red_text: str, normal_text: str = '') -> str:
-    print(f'{Fore.RED}{red_text}{Style.RESET_ALL}{normal_text}')
-
-
-def llm_guiding_answer(user_message: str):
-
-    promt = guiding_promt + user_message
-
-    role, content, time = sql_select(n=3)
-    messages = []
-
-    for i in range(len(role)):
-        messages.append({'role': role[i], 'content': content[i]})
-    messages.append({"role": "system", "content": promt})
-    messages.append({"role": "user", "content": user_message})
+    colors = {'green': Fore.GREEN, 'red': Fore.RED, 'yellow': Fore.YELLOW}
     
-    print('llm_guiding: ', end='')
-    pprint(messages)
-    for _ in range(3):
-        try:
-            response = llm_api(messages=messages, fast_model=True)
-            response = [None, 'Memory', 'Calendar', 'Todoist', 'Email'][int(response)]
-            print_green(green_text='function: llm_guiding_answer. ', normal_text=response)
-            return response
-        
-        except Exception as e:
-            print_red(red_text=f'function: llm_guiding_answer. Error: {e}')
+    func = stack()[1].function  # allows you to find out the name of the function from which this function is called
 
-    return None
+    color = colors.get(color, Fore.GREEN)  # get method if no key is found, returns Fore.GREEN
+
+    print(f'{color}{func}{Style.RESET_ALL}: {str(text)}')
+
+
 
 def llm_answer(user_message: str) -> str:
 
-    guiding_responce = llm_guiding_answer(user_message)  # by promt returns a number between 1 and 5
-    response_direction = guiding_responce
+    sql_incert('user', user_message)  # save user_message to db
 
-    memory.save([user_message], {'role': 'user', 'time': datetime.now()})
-
-    if response_direction == 'Memory':
-        memory_results = memory_search(user_message)
-        user_message += f'\n\n((system: Vector database search results (may be useless): {memory_results}))'
-
-    elif response_direction == 'Calendar':
-        user_message += f'\n\n((system: Google calendar timetable for day (it\'s {datetime.now()}): {get_events()}))'
-
-
-    sql_incert('user', user_message)
-
+    nw = datetime.now().strftime("%Y.%m.%d %H:%M:%S")
+    memory.save([user_message], {'role': 'user', 'time': nw})  # save user_message to vector db
 
     role, content, time = sql_select(n=6)
 
-    messages = [{'role': 'system', 'content': system_promt}]
+    messages = []
     for i in range(len(role)):
         messages.append({'role': role[i], 'content': content[i]})
-    
-    pprint(messages)
-    response = llm_api(messages=messages)
 
+
+    response_directions = [None, 'Memory', 'Calendar/Todoist for day', 'Calendar/Todoist for week', 'add event/task', 'close task']
+    guiding_messages = [{"role": "system", "content": guiding_prompt},
+                        {"role": "user", "content": user_message}]
+    for _ in range(3):
+        
+        try:
+            guiding_responce = llm_api(guiding_messages)
+            response_direction = response_directions[int(guiding_responce)]
+            break
+        except:
+            pass
+    else:
+        response_direction = None
+
+
+
+    if response_direction is not None:
+
+        if response_direction == 'Memory':
+            memory_results = memory_search(user_message)
+            system_message = f'Vector database search results (may be useless): {memory_results}'
+
+        elif response_direction == 'Calendar/Todoist for day':
+            system_message = f'Now {nw}. Today Events in Google Calendar: {calendar_get_events()}\nToday/no time tasks in Todoist: {todoist_get_tasks()}'
+
+        elif response_direction == 'Calendar/Todoist for week':
+            system_message = f'Now {nw}. This week\'s events in Google Calendar: {calendar_get_events(duration=7)}\nThis week/no time tasks in Todoist: {todoist_get_tasks()}'
+
+        elif response_direction in ['add event/task', 'close task']:
+            
+            promt = prompt_for_add if response_direction == 'add event/task' else prompt_for_close_task
+            system_messages = [{'role': 'system', 'content': promt},
+                                {'role': 'user', 'content': user_message}]
+            
+            for _ in range(3):
+                try:
+                    system_message = eval(llm_api(system_messages))
+                    break
+                except Exception as e:
+                    print_colorama(f'{response_direction}: {e}', color='red')
+                    system_message = f'Error: {e}'
+        
+        messages.append({'role': 'system', 'content': system_message})
+        sql_incert('system', system_message)
+
+    else:
+        system_message = None
+
+
+
+    response = llm_api(messages=messages)
+    
+    print_colorama(f'response_direction: {response_direction}, system_message: {system_message}, response: {response}')
     sql_incert('assistant', response)
-    
-    print_green('function: llm_answer')
-    
+    memory.save([response], {'role': 'assistant', 'time': nw})
+
     return response
 
 
@@ -99,9 +117,15 @@ def sql_launch():
         CREATE TABLE IF NOT EXISTS Setting (
         variable TEXT,
         value TEXT,
-        description Text
+        description TEXT
         )
         ''')
+    
+    row = cursor.execute(f'SELECT * FROM History').fetchall()
+    if row == []:
+        cursor.execute("INSERT INTO History (role, content, time) VALUES (?, ?, ?)", ('system', system_prompt, datetime.now().strftime('%Y%m%d %H:%M:%S')))
+
+    print_colorama(f'History size: {len(row)}')
 
     connection.commit()
     connection.close()
@@ -113,10 +137,8 @@ def sql_select(n=6):
 
     row = cursor.execute(f'SELECT * FROM History').fetchall()
 
-    if n == '*':
-        row = cursor.execute(f'SELECT * FROM History').fetchall()
-    else:
-        row = cursor.execute(f'SELECT * FROM History ORDER BY time LIMIT {n}').fetchall()
+    if n != '*':
+        row = row[-n:]
 
     role, content, time = [], [], []
 
@@ -145,28 +167,25 @@ def sql_incert(role: str, content: str):
 def memory_load():
 
     role, content, time = sql_select(n='*')
-
-    if role == []:
-        return
     
-    metadata = [{'role': i_role, 'time': i_time} for i_role, i_time in zip(role, time)]
-
-    # re.sub(r'\{{\{.*?\}}\}}', '', text) - removes all text between ((system: and )) 
-    content = [sub(r'\(\(system: .*?\)\)', '', i) for i in content]
-
-    memory.save(
-        texts=content,
+    texts = [content[i] for i in range(len(content)) if role[i] != 'system']
+    metadata = [{'role': role[i], 'time': time[i]} for i in range(len(content)) if role[i] != 'system']
+    
+    if metadata != []:
+        memory.save(
+        texts=texts,
         metadata=metadata
     )
 
-    print_green('function: memory_load')
+    print_colorama(f'There are {len(metadata)} items in the vector database')
 
 
 def memory_search(query: str, n:int = 2):
     result = memory.search(query, top_n = n)
     # f'{role} {time}: {chunk}'. time: YYYY-MM-DD HH:MM:SS
-    pretty_result = [f'{i["metadata"]["role"]} {i["metadata"]["time"][:10]}: {i["chunk"]}' for i in result]  
-    print_green('function: memory_search. ', pretty_result)
+    pretty_result = [f'{i["metadata"]["role"]} {str(i["metadata"]["time"])[:10]}: {i["chunk"]}' for i in result]  
+
+    print_colorama(pretty_result)
 
     return pretty_result
 
