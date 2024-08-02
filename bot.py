@@ -140,5 +140,5 @@ async def message_handler(message: Message) -> None:
 
 
 if __name__ == '__main__':
-    print('Bot is launched') 
+    print(f'{Fore.GREEN}Bot is launched{Style.RESET_ALL}') 
     dp.run_polling(bot)
