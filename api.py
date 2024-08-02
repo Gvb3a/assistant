@@ -4,9 +4,10 @@ import whisper
 from groq import Groq
 from ollama import chat
 from beautiful_date import D, days, hours
+from datetime import datetime
 from colorama import Fore, Style, init
 from dotenv import load_dotenv
-from random import choice
+from inspect import stack
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -15,6 +16,8 @@ from googleapiclient.discovery import build
 
 from gcsa.google_calendar import GoogleCalendar
 from gcsa.event import Event
+
+from todoist_api_python.api import TodoistAPI
 
 from config import LOCAL_WHISPER, LOCAL_LLM
 
@@ -25,13 +28,27 @@ load_dotenv()
 number_of_accounts = 3
 path = os.path.dirname(os.path.abspath(__file__))
 
-groq_api_key = os.getenv('GROQ_API_KEY')
+groq_api_key = os.getenv('GROQ_API')
 client = Groq(api_key=groq_api_key)
+
+todoist_api_key = os.getenv('TODOIST_API')
+todoist_api = TodoistAPI(todoist_api_key)
 
 TOKEN_FILES = [f'{path}\\token_{i}.json' for i in range(number_of_accounts)]
 CREDENTIALS_FILE = f'{path}\\client_secret.json'
 
 calendar = GoogleCalendar(credentials_path=CREDENTIALS_FILE)
+
+
+def print_colorama(text: str = None, color: str = 'green'):
+    # this function is in function.py, but it is better to declare it again.
+    colors = {'green': Fore.GREEN, 'red': Fore.RED, 'yellow': Fore.YELLOW}
+    
+    func = stack()[1].function
+
+    color = colors.get(color, Fore.GREEN)
+
+    print(f'{color}{func}{Style.RESET_ALL}: {str(text)}')
 
 
 def llm_api(messages: list, model: str = None, fast_model: str = False):
@@ -73,15 +90,16 @@ def speech_recognition(file_name: str) -> str:
             file=(file_name, file.read()),
             model="whisper-large-v3")
             
-            text = translation.text
+            text = translation.text.strip()
 
-    print('function: speech_recognition. ', f'Recognised: {text.strip()}. LOCAL_WHISPER={LOCAL_WHISPER}')
+    print_colorama(f'{text}. LOCAL_WHISPER={LOCAL_WHISPER}')
 
-    return text.strip()
+    return text
 
 
+# gmail
 def gmail_load_credentials() -> list:
-    # возращает список creds, которые необходимы для запросов. Создает файлы типа token_<num>.json если их не было (необходимо будет пройти регестрацию). Количество creds
+    # Returns a list of creds that are required for queries. Creates files like token_<num>.json if they do not exist (you will need to register)
     creds_list = []
     scopes = ['https://mail.google.com/']
     
@@ -109,7 +127,7 @@ def gmail_load_credentials() -> list:
 
 
 def gmail_list(max_results=5):
-    
+    # sample result: [{'messages': [{'id': str, 'threadId': str}, ...], 'nextPageToken': str, 'resultSizeEstimate': 201}]
     creds_list = gmail_load_credentials()
     result_list = []
 
@@ -128,7 +146,7 @@ def gmail_list(max_results=5):
     
 
 def gmail_modify(message_id: str, account: int = 0) -> None:
-    # makes a message read if it is not read
+    # makes a message read if it is not read and vice versa
     creds = gmail_load_credentials()[account]
        
     url = f'https://gmail.googleapis.com/gmail/v1/users/me/threads/{message_id}/modify'
@@ -138,7 +156,8 @@ def gmail_modify(message_id: str, account: int = 0) -> None:
         'Content-Type': 'application/json'
     }
 
-    unread = gmail_message(message_id, creds)[-1]
+    unread = gmail_message(message_id, creds)[-1]  # snippet, sender, to, subject, unread (bool)
+    
     
     if unread:
         body = {
@@ -153,7 +172,7 @@ def gmail_modify(message_id: str, account: int = 0) -> None:
     
     response.raise_for_status()
 
-    return None
+    return
 
 
 def gmail_message(message_id: str, creds: str):
@@ -182,16 +201,30 @@ def gmail_message(message_id: str, creds: str):
 
 
 def mail():
-    result = ''
+    """
+    # Example result:
+    1.1: *from*  # bold (text go as Markdown)
+    subject
+    _snippet_  # italic
+    —————————————————————
+    2.2: *from*
+    subject
+    _snippet_
+    =======================================
+    2.1: *from*
+    subject
+    _snippet_
+    """
+    result = str()
     list_of_mail_lists  = gmail_list(max_results=10)
     # {'messages': [{'id': 'str', 'threadId': 'str'}, ...], 'nextPageToken': 'str', 'resultSizeEstimate': int}
     dict_of_unread = {}
 
     for mail_list in list_of_mail_lists:
 
-        mail_index = list_of_mail_lists.index(mail_list)
-        count_of_unread_message = 3
-        unread_messages = False 
+        mail_index = list_of_mail_lists.index(mail_list)  # for numbering accounts 1.x, 2.x
+        count_of_unread_message = 3  # unread -> read -> read -> unread -> read -> read -> read -> break
+        unread_messages = False  # To check if there are any unread messages at all
 
         # In gmail_message, I need the creds variable, and since gmail_load_credentials returns a list of creds, we take the creds at index
         creds = gmail_load_credentials()[mail_index]  
@@ -199,12 +232,12 @@ def mail():
         for message in mail_list['messages']:
             
             message_index = mail_list['messages'].index(message)
-            index = round(mail_index + message_index/10 + 1.1, 1)
+            index = round(mail_index + message_index/10 + 1.1, 1)  # 0.0 -> 1.1, 0.1 -> 1.2. Without round 0.1+1.1 = 1.2000000000000002 
 
             snippet, sender, to, subject, unread = gmail_message(message_id=message['id'], creds=creds)
 
             if unread:
-                if unread_messages:
+                if unread_messages:  # do not add ————————————————————— before the first unread
                     result += '\n' + "—"*21 + '\n'
                 result += f'{index}: *{sender}*\n{subject}\n_{snippet}_'
                 dict_of_unread[index] = message['id']
@@ -224,10 +257,12 @@ def mail():
     if result == '':
         result = 'No unread mail✅'
     
+    print_colorama(f'Email count: {len(dict_of_unread)}')
     return result, dict_of_unread
 
 
-def get_events(start_time=D.today(), duration: int = 1):
+# Google Calendar
+def calendar_get_events(start_time=D.today(), duration: int = 1) -> list:
     # returns a list of all events from start_time to end_time. duration in days
     end_time = start_time + duration * days
     events = calendar[start_time:end_time:'startTime']
@@ -235,17 +270,28 @@ def get_events(start_time=D.today(), duration: int = 1):
     return [f'{event.summary}: {event.start} to {event.end}' for event in events]
 
 
-def add_event_without_time(summary: str = '(No title)', start = D.today(), duration: int = 1):
-    # by 'without time' we mean an all-day event. duration in days
-    end = start + duration * days
-    event = Event(summary, start=start, end=end)
 
+def calendar_add_event(summary: str = '(No title)', start: datetime = D.today(), duration_in_hours: int = 24):
+    end = start + duration_in_hours * hours
+    event = Event(summary, start=start, end=end)
     return calendar.add_event(event)
 
 
-def add_event_with_time(summary: str = '(No title)', start = D.now(), duration: int = 1):
-    # Event with a specific time. duration in hours
-    end = start + duration * hours
-    event = Event(summary, start=start, end=end)
+# Todoist
+def todoist_get_tasks() -> list:
+    tasks = todoist_api.get_tasks()
+    tasks_list = []
+    for task in tasks:
+        date = task.due.string if task.due else None
+        tasks_list.append(f'{task.content}, date: {date}, id: {task.id}')
 
-    return calendar.add_event(event)
+    return tasks_list
+
+
+def todoist_new_task(content: str, due_string: str = None) -> str:
+    task = todoist_api.add_task(content=content, due_string=due_string)
+    return task.id
+
+
+def todoist_close_task(task_id) -> bool:
+    return todoist_api.close_task(task_id=str(task_id))
