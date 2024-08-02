@@ -9,8 +9,8 @@ from datetime import datetime
 from os import getenv, remove
 
 from api import mail, gmail_modify, speech_recognition
-from function import print_green, print_red, llm_answer
-
+from function import llm_answer
+    
 
 init()
 load_dotenv()
@@ -128,7 +128,7 @@ async def message_handler(message: Message) -> None:
         remove(file_name)
 
     else:
-        text = message.text
+        text = message.text 
 
     answer = llm_answer(text)
 
@@ -140,5 +140,5 @@ async def message_handler(message: Message) -> None:
 
 
 if __name__ == '__main__':
-    print_green('Bot is launched') 
+    print('Bot is launched') 
     dp.run_polling(bot)
