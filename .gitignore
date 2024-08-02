@@ -1,8 +1,10 @@
 .env
 .idea
 .devdbrc
+.git
 __pycache__/
 vectordb/
+venv/
 
 assistant.db
 client_secret.json

@@ -1,17 +1,14 @@
 import sqlite3
-import whisper
 
 from colorama import Fore, Style, init
 from datetime import datetime, timedelta, timezone
 from vectordb import Memory
-from os import getenv
 from re import sub
 from inspect import stack
 
 from config import system_prompt, guiding_prompt, prompt_for_add, prompt_for_close_task
 from api import calendar_get_events, calendar_add_event, todoist_get_tasks, todoist_new_task, todoist_close_task, llm_api
 
-from pprint import pprint
 init()
 
 memory = Memory()
