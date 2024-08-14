@@ -17,10 +17,10 @@ Create a telegram bot with artificial intelligence that will use google calendar
 ### Todo:
 
 - [ ] Regenerete message (llama 3.1 70b often gives nonsense)
+- [ ] Hosting version (online services only)
 - [ ] Add a reminder/timers. If I get too far out of the idea, I can make it just start the dialogue.
-- [ ] TTS. [ElevenLabs](https://elevenlabs.io/api) or look for a local TTS, but I don't think my computer will support it, so maybe I won't.
+- [ ] TTS. [ElevenLabs](https://elevenlabs.io/api) or local TTS.
 - [ ] [WolframAlpha](https://www.wolframalpha.com/). I already have a [bot](https://github.com/Gvb3a/wolfram_telegram_bot) and it would be easy to implement, but is it necessary?
 - [ ] [Character.ai](https://character.ai/). Add a mode to communicate with the characters. It will be possible then to add picture generation(SD) and stickers. But maybe I won't add it.
 - [ ] Make a local calendar/todolist. I want to make it so that it would be possible to run everything locally
 - [ ] Add an option to communicate not via telegram ([LiveWhisper](https://github.com/Nikorasu/LiveWhisper)).
-- [ ] Search if there is a free api ChatGPT-4o, Claude 3.5 Sonnet or Perplexity.
