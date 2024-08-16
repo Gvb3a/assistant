@@ -4,6 +4,7 @@
 .git
 __pycache__/
 .venv/
+.vscode/
 
 assistant.db
 client_secret.json
