@@ -9,5 +9,4 @@ ollama==0.3.1
 python-dotenv==1.0.1
 todoist_api_python==2.1.5
 openai-whisper==20231117
-tensorflow_hub==0.16.1
-git+https://github.com/vioshyvo/mrpt/
+chromadb==0.5.5

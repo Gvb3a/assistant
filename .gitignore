@@ -3,8 +3,7 @@
 .devdbrc
 .git
 __pycache__/
-vectordb/
-venv/
+.venv/
 
 assistant.db
 client_secret.json
