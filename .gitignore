@@ -9,6 +9,6 @@ venv/
 assistant.db
 client_secret.json
 token.pickle
-token_0.json
-token_1.json
-token_2.json
+token_*.json
+
+tts_*
