@@ -1,46 +1,72 @@
 import os
-import requests
-import whisper
-from groq import Groq
-from ollama import chat
-from beautiful_date import D, days, hours
+import requests  # for gmail requests
+import whisper  # for local speech recognition
+from groq import Groq  # for online llm
+from ollama import chat  # for local llm
+from beautiful_date import D, days, hours  # for google calendar. A comfortable way to set the date
 from datetime import datetime
-from colorama import Fore, Style, init
-from dotenv import load_dotenv
-from inspect import stack
+from colorama import Fore, Style, init  # for multicoloured output to the console
+from dotenv import load_dotenv  # to load values from .env
+from inspect import stack  # for the function name (print_colorama)
 
+# google stuff (gmail). Why did I choose to learn from scratch instead of using the cat library?
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
+# google calendar library
 from gcsa.google_calendar import GoogleCalendar
 from gcsa.event import Event
 
-from todoist_api_python.api import TodoistAPI
+from todoist_api_python.api import TodoistAPI  # Todoist
 
-from config import LOCAL_WHISPER, LOCAL_LLM
+from chromadb import Client
 
-init()
-load_dotenv()
+from tavily import TavilyClient
 
+from elevenlabs.client import ElevenLabs
+from elevenlabs import save
 
-number_of_accounts = 3
-path = os.path.dirname(os.path.abspath(__file__))
+from config import LOCAL_WHISPER, LOCAL_LLM, NUMBER_OF_GMAIL_ACCOUNTS  # settings
+from sql import sql_select
 
-groq_api_key = os.getenv('GROQ_API')
-client = Groq(api_key=groq_api_key)
-
-todoist_api_key = os.getenv('TODOIST_API')
-todoist_api = TodoistAPI(todoist_api_key)
-
-TOKEN_FILES = [f'{path}\\token_{i}.json' for i in range(number_of_accounts)]
-CREDENTIALS_FILE = f'{path}\\client_secret.json'
-
-calendar = GoogleCalendar(credentials_path=CREDENTIALS_FILE)
+init()  # that cmd would also have a different coloured output
+load_dotenv()  # load variables from the .env file
 
 
-def print_colorama(text: str = None, color: str = 'green'):
+path = '\\'.join(os.path.dirname(os.path.abspath(__file__)).split('\\')[:-1])
+
+
+groq_api_key = os.getenv('GROQ_API')  # Groq
+groq_client = Groq(api_key=groq_api_key) # https://console.groq.com/docs/quickstart
+
+
+todoist_api_key = os.getenv('TODOIST_API')  # Todoist. TODO: local todolist
+todoist_api = TodoistAPI(str(todoist_api_key))  # https://developer.todoist.com/rest/v2/#overview
+
+
+tavily_api_key = os.getenv('TAVILY_API_KEY')
+tavily_client = TavilyClient(api_key=tavily_api_key)
+
+
+elevenlabs_api_key = os.getenv('ELEVENLABS_API_KEY')
+elevenlabs_client = ElevenLabs(api_key=elevenlabs_api_key)
+
+
+chromadb_client = Client()  # chromadb. Local vector datebase
+vector_memory = chromadb_client.create_collection("all-my-documents")  # https://github.com/chroma-core/chroma
+
+
+CREDENTIALS_FILE = f'{path}\\client_secret.json'  # required for gmail and google calendar
+TOKEN_FILES = [f'{path}\\token_{i}.json' for i in range(NUMBER_OF_GMAIL_ACCOUNTS)]
+
+
+calendar = GoogleCalendar(credentials_path=CREDENTIALS_FILE)  # type: ignore https://github.com/kuzmoyev/google-calendar-simple-api
+
+
+
+def print_colorama(text: str = None, color: str = 'green'): # type: ignore
     # this function is in function.py, but it is better to declare it again.
     colors = {'green': Fore.GREEN, 'red': Fore.RED, 'yellow': Fore.YELLOW}
     
@@ -51,7 +77,7 @@ def print_colorama(text: str = None, color: str = 'green'):
     print(f'{color}{func}{Style.RESET_ALL}: {str(text)}')
 
 
-def llm_api(messages: list, model: str = None, fast_model: str = False):
+def llm_api(messages: list, model: str = None, fast_model: str = False): # type: ignore
 
     if fast_model and model is None:
         model = 'qwen2:1.5b' if LOCAL_LLM else 'llama-3.1-8b-instant'
@@ -62,7 +88,7 @@ def llm_api(messages: list, model: str = None, fast_model: str = False):
 
 
 def groq_api(messages: list, model: str = 'llama-3.1-70b-versatile'):
-    response = client.chat.completions.create(
+    response = groq_client.chat.completions.create(
             messages=messages,
             model=model)
     return response.choices[0].message.content
@@ -72,6 +98,50 @@ def ollama_api(messages: list, model: str = 'phi3'):
     response = chat(model=model, 
                     messages=messages)
     return response['message']['content']
+
+
+
+def vector_datebase_load():
+    role, content, time = sql_select('*') # type: ignore
+    
+    print_colorama(f'There are {len(content)} items in the vector database')
+
+    if content == []:
+        return
+
+    vector_memory.add(
+        documents=content,
+        metadatas=[{'role': role[i], 'time': time[i]} for i in range(len(content))],
+        ids=[f'{content[i]}-{role[i]}-{time[i]}' for i in range(len(content))]  # an obligatory element that must be individualised
+    )
+
+
+def vector_datebase_search(text: str, n_results: int = 2):
+
+    results = vector_memory.query(
+        query_texts=[text],
+        n_results=n_results,
+        where={"role": "user"}, # optional filter
+    )
+
+    # {'ids': [[str, str]], 'distances': [[float, float]], 'metadatas': [[dict, dict]], 'embeddings': None, 'documents': [[str, str]], 'uris': None, 'data': None, 'included': ['metadatas', 'documents', 'distances']}
+    pretty_result = []
+    for i in range(len(results['ids'][0])):
+        pretty_result.append(f"{results['metadatas'][0][i]['role']} at {results['metadatas'][0][i]['time']}: {results['documents'][0][i]}") # type: ignore
+
+    return pretty_result
+
+
+def vector_datebase_incert(role: str, content: str):
+
+    time = datetime.now().strftime('%Y.%m.%d %H:%M')
+
+    vector_memory.add(
+        documents=[content],
+        metadatas=[{"role": role, "time": time}],
+        ids=[f'{content}-{role}-{time}']
+    )
+
 
 
 def speech_recognition(file_name: str) -> str:
@@ -86,15 +156,15 @@ def speech_recognition(file_name: str) -> str:
     else:
 
         with open(file_name, "rb") as file:
-            translation = client.audio.transcriptions.create(
+            translation = groq_client.audio.transcriptions.create(
             file=(file_name, file.read()),
             model="whisper-large-v3")
             
-            text = translation.text.strip()
+            text = translation.text
 
     print_colorama(f'{text}. LOCAL_WHISPER={LOCAL_WHISPER}')
 
-    return text
+    return str(text).strip()
 
 
 # gmail
@@ -200,7 +270,7 @@ def gmail_message(message_id: str, creds: str):
     return snippet, sender, to, subject, unread
 
 
-def mail():
+def mail():  # I would move it to function.py (maybe rename it to sql.py), but it would be a circular import
     """
     # Example result:
     1.1: *from*  # bold (text go as Markdown)
@@ -271,7 +341,7 @@ def calendar_get_events(start_time=D.today(), duration: int = 1) -> list:
 
 
 
-def calendar_add_event(summary: str = '(No title)', start: datetime = D.today(), duration_in_hours: int = 24):
+def calendar_add_event(summary: str = '(No title)', start: datetime = D.today(), duration_in_hours: int = 24): # type: ignore
     end = start + duration_in_hours * hours
     event = Event(summary, start=start, end=end)
     return calendar.add_event(event)
@@ -288,10 +358,39 @@ def todoist_get_tasks() -> list:
     return tasks_list
 
 
-def todoist_new_task(content: str, due_string: str = None) -> str:
+def todoist_new_task(content: str, due_string: str = None) -> str: # type: ignore
     task = todoist_api.add_task(content=content, due_string=due_string)
     return task.id
 
 
 def todoist_close_task(task_id) -> bool:
     return todoist_api.close_task(task_id=str(task_id))
+
+
+# Tavily. https://tavily.com/
+def tavily(text: str) -> str:
+    response = tavily_client.qna_search(text)
+    print_colorama(response)
+    return response
+
+
+# elevenlabs
+def tts(text: str, voice: str = 'Brittney Hart', model: str ='eleven_turbo_v2_5'):
+    try:
+        
+        file_name = 'tts - ' + ''.join(letter for letter in text[:64] if letter.isalnum() or letter==' ') + '.mp3'
+
+        audio = elevenlabs_client.generate(
+            text=text,
+            voice=voice,
+            model=model
+            )
+        
+        save(audio=audio, filename=file_name)
+
+        return file_name
+    
+    except Exception as e:
+        print(f'{Fore.RED}tts error: {e}{Style.RESET_ALL}')
+        return False
+vector_datebase_load()

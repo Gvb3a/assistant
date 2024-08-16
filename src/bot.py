@@ -9,7 +9,7 @@ from datetime import datetime
 from os import getenv, remove
 
 from api import mail, gmail_modify, speech_recognition
-from function import llm_answer
+from llm_answer import llm_answer
     
 
 init()

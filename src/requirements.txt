@@ -10,3 +10,5 @@ python-dotenv==1.0.1
 todoist_api_python==2.1.5
 openai-whisper==20231117
 chromadb==0.5.5
+tavily-python==0.3.9
+elevenlabs==1.7.0
