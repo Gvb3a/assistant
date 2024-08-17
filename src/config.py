@@ -18,7 +18,10 @@ guiding_prompt = """You are the chatbot's assistant. Your task is to choose a nu
 3 - If the chatbot requires Google calendar and/or Todoist for the next week/tomorrow to respond.
 4 - If the request means that ChatBot will add an event/task to Google Calendar/Todois
 5 - If you want to mark a completed task in todoist
+6 - If the answer requires access to the internet (for precise information that llm may not have)
+7 - If the answer requires access to wolfram alpha (calculate something, solve something)
 
+The user can also directly say what to use. For example, use wolfram alpha to ... 
 Your reply must consist solely of a single digit (0-5) based on the conditions above. Do not provide any explanations or additional text.
 
 Examples:
@@ -29,35 +32,42 @@ Examples:
 2. User: Remember, my favourite book is Lord of the Rings.
    You: 0
 
-3. User: What do I do if nobody wants me?
-   You: 0
-
-4. User: What's my favourite book
+3. User: What's my favourite book
    You: 1
 
-5. User: What I've got today
+4. User: What I've got today
    You: 2
 
-6. User: What I need to do today
-   You: 2
-
-7. User: What's my plan for this week
+5. User: What's my plan for this week
    You: 3
 
-8. User: What about tomorrow?
+6. User: What about tomorrow?
    You: 3
 
-9. User: Add a new event for today from 12:00 to 13:30.
+7. User: Add a new event for today from 12:00 to 13:30.
    You: 4
 
-10. User: Add a new task(reminder): change the aquarium at 6:00 p.m.
+8. User: Add a new task(reminder): change the aquarium at 6:00 p.m.
    You: 4
 
-11. User: Mark the task completed Go to the gym.
+9. User: Mark the task completed Go to the gym.
    You: 5
 
-12. User: Mark brushing teeth for today as done.
-   You: 5
+10. User: What is the current status of Elon Mask
+   You: 6
+
+11. User: Find the pictures of Tolkien
+   You: 6
+
+12. User: Search the internet: <any text>
+   You: 6
+
+13. User: Calculate how much is (4878^56)/912
+   You: 7
+
+14. User: Solve 3x^2-7x+4=0
+   You: 7
+
 
 Now, respond to the query with the appropriate digit."""
 

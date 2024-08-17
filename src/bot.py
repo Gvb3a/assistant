@@ -1,6 +1,6 @@
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import Message, FSInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 
 from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
@@ -131,21 +131,26 @@ async def message_handler(message: Message) -> None:
     else:
         text = message.text 
 
-    answer = llm_answer(text)
-
+    answer, images = llm_answer(text)
+    print(images)
     try:
-        await message.answer(answer, parse_mode='Markdown')
-    except:
+        if images == []:
+            await message.answer(answer, parse_mode='Markdown')
+        else:
+            caption = answer[:1024]
+            media = [InputMediaPhoto(media=images[0], caption=caption)]
+            for image in images[1:]:
+                media.append(InputMediaPhoto(media=image))
+            await message.answer_media_group(media=media)
+    except Exception as e:
+        print(e)
         await message.answer(answer)
 
     
-    try:
-        tts_enabled = sql_setting_get('tts enabled')
-        if tts_enabled:
-            file_name = tts(text=answer)
-            await message.answer_voice(file_name)
-    except:
-        pass
+    tts_enabled = sql_setting_get('tts enabled')
+    if tts_enabled:
+        file_name = tts(text=answer)
+        await message.answer_voice(FSInputFile(file_name))
 
 
 

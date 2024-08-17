@@ -1,17 +1,9 @@
 from datetime import datetime
 from colorama import Fore, init, Style
 
-from api import llm_api, vector_datebase_incert, vector_datebase_search, calendar_add_event, calendar_get_events, todoist_new_task, todoist_get_tasks, todoist_close_task
+from api import llm_api, vector_datebase_incert, vector_datebase_search, calendar_add_event, calendar_get_events, todoist_new_task, todoist_get_tasks, todoist_close_task, tavily_search
 from sql import sql_select, sql_incert
 from config import guiding_prompt, prompt_for_close_task, prompt_for_add
-
-def print_colorama(text: str = None, color: str = 'green'): # type: ignore
-    
-    colors = {'green': Fore.GREEN, 'red': Fore.RED, 'yellow': Fore.YELLOW}
-    
-    color = colors.get(color, Fore.GREEN)
-
-    print(f'{color}llm_answer{Style.RESET_ALL}: {str(text)}')
 
 
 def llm_answer(user_message: str) -> str:
@@ -26,9 +18,10 @@ def llm_answer(user_message: str) -> str:
     messages = []
     for i in range(len(role)):
         messages.append({'role': role[i], 'content': content[i]})
+    images = []  # internet search and wolfram alpha returns pictures
 
 
-    response_directions = [None, 'Memory', 'Calendar/Todoist for day', 'Calendar/Todoist for week', 'add event/task', 'close task']
+    response_directions = [None, 'Memory', 'Calendar/Todoist for day', 'Calendar/Todoist for week', 'add event/task', 'close task', 'search internet', 'wolfram alpha']
     guiding_messages = [{"role": "system", "content": guiding_prompt},
                         {"role": "user", "content": user_message}]
     for _ in range(3):
@@ -59,17 +52,29 @@ def llm_answer(user_message: str) -> str:
         elif response_direction in ['add event/task', 'close task']:
             
             promt = prompt_for_add if response_direction == 'add event/task' else prompt_for_close_task
-            system_messages = [{'role': 'system', 'content': promt},
+            messages_promt = [{'role': 'system', 'content': promt},
                                 {'role': 'user', 'content': user_message}]
             
             for _ in range(3):
                 try:
-                    system_message = eval(llm_api(system_messages))
+                    system_message = eval(llm_api(messages_promt))
                     break
                 except Exception as e:
-                    print_colorama(f'{response_direction}: {e}', color='red')
+                    print(f'{Fore.RED}llm_answer{Style.RESET_ALL}. {response_direction}: {e}')
                     system_message = f'Error: {e}'
         
+        elif response_direction  == 'search internet':
+            
+            answer, images = tavily_search(text=user_message)
+
+            system_message = f'Internet search results: {answer}. The images will be attached to your reply. The answer should be no more than 1000 characters'
+
+
+        elif response_direction  == 'wolfram alpha':
+            
+            system_message = f'Access to wolfram alpha has not been made yet. So tell the user'
+
+            
         messages.append({'role': 'system', 'content': system_message})
         sql_incert('system', system_message)
 
@@ -80,7 +85,7 @@ def llm_answer(user_message: str) -> str:
 
     response = llm_api(messages=messages)
     
-    print_colorama(f'response_direction: {response_direction}, system_message: {system_message}, response: {response}')
+    print(f'{Fore.GREEN}llm_answer{Style.RESET_ALL}. response_direction: {response_direction}, system_message: {system_message}, response: {response}')
     sql_incert('assistant', response)
 
-    return response
+    return response, images

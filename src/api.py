@@ -8,6 +8,7 @@ from datetime import datetime
 from colorama import Fore, Style, init  # for multicoloured output to the console
 from dotenv import load_dotenv  # to load values from .env
 from inspect import stack
+from typing import Literal
 
 # google stuff (gmail). Why did I choose to learn from scratch instead of using the cat library?
 from google.auth.transport.requests import Request
@@ -165,7 +166,7 @@ def speech_recognition(file_name: str) -> str:
             
             text = translation.text
 
-    print_colorama(f'{text}. local_whisper={local_whisper}')
+    print_colorama(f'{text} local_whisper={local_whisper}')
 
     return str(text).strip()
 
@@ -371,10 +372,12 @@ def todoist_close_task(task_id) -> bool:
 
 
 # Tavily. https://tavily.com/
-def tavily_qna_search(text: str) -> str:  # TODO: tavily_client.search(RAG Application), include_images
-    response = tavily_client.qna_search(text)
+def tavily_search(text: str, search_depth: Literal['basic', 'advanced'] = 'advanced', max_results: int = 0):
+    response = tavily_client.search(query=text, search_depth=search_depth, include_answer=True, include_images=True, max_results=max_results)
+    answer = response['answer']
+    images = response['images']
     print_colorama(response)
-    return response
+    return answer, images
 
 
 # elevenlabs
@@ -384,16 +387,6 @@ def tts(text: str, voice: str = 'Brittney Hart', model: str ='eleven_turbo_v2_5'
     file_name = 'tts - ' + ''.join(letter for letter in text[:64] if letter.isalnum() or letter==' ') + '.mp3'
 
     if local_tts:
-
-        audio = elevenlabs_client.generate(
-            text=text,
-            voice=voice,
-            model=model
-        )
-            
-        save(audio=audio, filename=file_name)
-
-    else:
         """
         import torch
         from TTS.api import TTS
@@ -406,7 +399,17 @@ def tts(text: str, voice: str = 'Brittney Hart', model: str ='eleven_turbo_v2_5'
 
         tts.tts_to_file(text=text, speaker_wav=str, language=str, file_path=str)
         """
+
+    else:
+        audio = elevenlabs_client.generate(
+            text=text,
+            voice=voice,
+            model=model
+        )
+            
+        save(audio=audio, filename=file_name)
+
     return file_name
     
-    
+
 vector_datebase_load()
