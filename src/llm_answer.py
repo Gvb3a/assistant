@@ -2,11 +2,28 @@ from datetime import datetime
 from colorama import Fore, init, Style
 
 from api import llm_api, vector_datebase_incert, vector_datebase_search, calendar_add_event, calendar_get_events, todoist_new_task, todoist_get_tasks, todoist_close_task, tavily_search
-from sql import sql_select, sql_incert
+from sql import sql_select, sql_incert, sql_delete_last
 from config import guiding_prompt, prompt_for_close_task, prompt_for_add
 
 
-def llm_answer(user_message: str) -> str:
+def llm_regenerate() -> tuple[str, list]:
+    
+    sql_delete_last()
+
+    role, content, time = sql_select(n=5)
+
+    messages = []
+    for i in range(len(role)):
+        messages.append({'role': role[i], 'content': content[i]})
+
+    answer = llm_api(messages=messages)
+    print('llm regeretare answer', answer)
+    sql_incert('assistant', answer)
+
+    return answer, []
+
+
+def llm_answer(user_message: str) -> tuple[str, list]:
 
     sql_incert('user', user_message)  # save user_message to db
 
@@ -21,7 +38,7 @@ def llm_answer(user_message: str) -> str:
     images = []  # internet search and wolfram alpha returns pictures
 
 
-    response_directions = [None, 'Memory', 'Calendar/Todoist for day', 'Calendar/Todoist for week', 'add event/task', 'close task', 'search internet', 'wolfram alpha']
+    response_directions = [None, 'Memory', 'Calendar/Todoist for day', 'Calendar/Todoist for week', 'add event/task', 'close task', 'search internet', 'wolfram alpha', 'regenerate']
     guiding_messages = [{"role": "system", "content": guiding_prompt},
                         {"role": "user", "content": user_message}]
     for _ in range(3):
@@ -73,6 +90,12 @@ def llm_answer(user_message: str) -> str:
         elif response_direction  == 'wolfram alpha':
             
             system_message = f'Access to wolfram alpha has not been made yet. So tell the user'
+
+        elif response_direction  == 'regenerate':
+            sql_delete_last()
+            response, images = llm_regenerate()
+            print(f'{Fore.GREEN}llm_answer{Style.RESET_ALL}(regenarate): {str(response)}')
+            return response, images
 
             
         messages.append({'role': 'system', 'content': system_message})

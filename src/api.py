@@ -107,7 +107,7 @@ def ollama_api(messages: list, model: str = 'phi3'):
 def vector_datebase_load():
     role, content, time = sql_select('*') # type: ignore
     
-    print_colorama(f'There are {len(content)} items in the vector database')
+    print_colorama()
 
     if content == []:
         return
@@ -290,7 +290,7 @@ def mail():  # I would move it to function.py (maybe rename it to sql.py), but i
     _snippet_
     """
     result = str()
-    list_of_mail_lists  = gmail_list(max_results=10)
+    list_of_mail_lists  = gmail_list(max_results=15)
     # {'messages': [{'id': 'str', 'threadId': 'str'}, ...], 'nextPageToken': 'str', 'resultSizeEstimate': int}
     dict_of_unread = {}
 

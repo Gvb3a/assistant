@@ -20,9 +20,10 @@ guiding_prompt = """You are the chatbot's assistant. Your task is to choose a nu
 5 - If you want to mark a completed task in todoist
 6 - If the answer requires access to the internet (for precise information that llm may not have)
 7 - If the answer requires access to wolfram alpha (calculate something, solve something)
+8 - User asks to regenerate message
 
 The user can also directly say what to use. For example, use wolfram alpha to ... 
-Your reply must consist solely of a single digit (0-5) based on the conditions above. Do not provide any explanations or additional text.
+Your reply must consist solely of a single digit (0-8) based on the conditions above. Do not provide any explanations or additional text.
 
 Examples:
 
@@ -32,41 +33,47 @@ Examples:
 2. User: Remember, my favourite book is Lord of the Rings.
    You: 0
 
-3. User: What's my favourite book
+3. User: The internet is so cool
+   You: 0
+
+4. User: What's my favourite book
    You: 1
 
-4. User: What I've got today
+5. User: What I've got today
    You: 2
 
-5. User: What's my plan for this week
+6. User: What's my plan for this week
    You: 3
 
-6. User: What about tomorrow?
+7. User: What about tomorrow?
    You: 3
 
-7. User: Add a new event for today from 12:00 to 13:30.
+8. User: Add a new event for today from 12:00 to 13:30.
    You: 4
 
-8. User: Add a new task(reminder): change the aquarium at 6:00 p.m.
+9. User: Add a new task(reminder): change the aquarium at 6:00 p.m.
    You: 4
 
-9. User: Mark the task completed Go to the gym.
+10. User: Mark the task completed Go to the gym.
    You: 5
 
-10. User: What is the current status of Elon Mask
+11. User: What is the current status of Elon Mask
    You: 6
 
-11. User: Find the pictures of Tolkien
+12. User: Find the pictures of Tolkien
    You: 6
 
-12. User: Search the internet: <any text>
+13. User: Search the internet: <any text>
    You: 6
 
-13. User: Calculate how much is (4878^56)/912
+14. User: Calculate how much is (4878^56)/912
    You: 7
 
-14. User: Solve 3x^2-7x+4=0
+15. User: Solve 3x^2-7x+4=0
    You: 7
+
+16. User: Regenerate. You wrote rubbish
+   You: 8
 
 
 Now, respond to the query with the appropriate digit."""

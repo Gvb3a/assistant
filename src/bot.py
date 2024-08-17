@@ -10,7 +10,7 @@ from os import getenv, remove
 
 from api import mail, gmail_modify, speech_recognition, tts
 from sql import sql_setting_get
-from llm_answer import llm_answer
+from llm_answer import llm_answer, llm_regenerate
     
 
 init()
@@ -98,7 +98,6 @@ async def callback_translate(callback: CallbackQuery):
 
 
 
-
 @dp.message(Command('mail'))
 async def command_mail(message: Message) -> None:
     
@@ -107,8 +106,19 @@ async def command_mail(message: Message) -> None:
     await bot.send_message(chat_id=message.chat.id, text=text, reply_markup=inline_keyboard, parse_mode='Markdown')
 
 
+@dp.message(Command('regenerate'))
+async def command_mail(message: Message) -> None:
+    chat_id = message.chat.id
+    message_id = message.message_id
 
+    answer, images = llm_regenerate()
 
+    try:
+        await message.answer(text=answer, parse_mode='Markdown')
+    except:
+        await message.answer(text=answer)
+
+    
 
 @dp.message()
 async def message_handler(message: Message) -> None:
@@ -132,7 +142,7 @@ async def message_handler(message: Message) -> None:
         text = message.text 
 
     answer, images = llm_answer(text)
-    print(images)
+    
     try:
         if images == []:
             await message.answer(answer, parse_mode='Markdown')

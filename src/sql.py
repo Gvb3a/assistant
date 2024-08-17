@@ -24,7 +24,7 @@ def sql_launch():
     
     history_row = cursor.execute(f'SELECT * FROM History').fetchall()
     if history_row == []:
-        cursor.execute("INSERT INTO History (role, content, time) VALUES (?, ?, ?)", ('system', system_prompt, datetime.now().strftime('%Y.%m.%d %H:%M')))
+        cursor.execute("INSERT INTO History (role, content, time) VALUES (?, ?, ?)", ('system', system_prompt, datetime.now().strftime('%Y.%m.%d %H:%M:%S')))
 
     setting_row = cursor.execute(f'SELECT * FROM Settings').fetchall()
     if setting_row == []:
@@ -88,6 +88,16 @@ def sql_setting_update(name: str, new_value: int) -> None:
     cursor = connection.cursor()
     
     cursor.execute("UPDATE Settings SET value = ? WHERE name = ?", (new_value, name))
+
+    connection.commit()
+    connection.close()
+
+
+def sql_delete_last():
+    connection = sqlite3.connect('assistant.db')
+    cursor = connection.cursor()
+
+    cursor.execute("DELETE FROM History WHERE time = (SELECT MAX(time) FROM History)")
 
     connection.commit()
     connection.close()
