@@ -3,7 +3,7 @@ from colorama import Fore, init, Style
 
 from api import llm_api, vector_datebase_incert, vector_datebase_search, calendar_add_event, calendar_get_events, todoist_new_task, todoist_get_tasks, todoist_close_task
 from sql import sql_select, sql_incert
-from config import system_prompt, guiding_prompt, prompt_for_close_task, prompt_for_add
+from config import guiding_prompt, prompt_for_close_task, prompt_for_add
 
 def print_colorama(text: str = None, color: str = 'green'): # type: ignore
     

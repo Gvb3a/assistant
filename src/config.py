@@ -1,17 +1,25 @@
-NUMBER_OF_GMAIL_ACCOUNTS = 3
-LOCAL_WHISPER = False  # If true, whisper is used locally, otherwise via the Groq API.
-LOCAL_LLM = False
+
+# When creating the database, the values will be taken from here. This is done to make it convenient to change values
+db_defult_settings = [  
+   {'name': 'number of gmail accounts', 'value': 3},
+   {'name': 'local whisper', 'value': 0}, # If 1, whisper(speech recognition) is used locally, otherwise(0) via the Groq API.
+   {'name': 'local llm', 'value': 0},  # 0 - groqcloud, 1 - ollama
+   {'name': 'local tts', 'value': 0},  # 0 - elevenlabs, 1 - https://github.com/coqui-ai/TTS 
+   {'name': 'tts enabled', 'value': 1} 
+]  # TODO: vector db. Problem with circular import when changing a value
+
+
 system_prompt = """You are a helpful assistant with access to various services (google calendar, todoist), but mostly you just chat in Telegram. You communicate with Boris, the developer who created you.  Access to services is provided in the following way: after the user's request, if needed from the system, there will be a message. Provide this information only when it is relevant to the conversation. Always prioritise honesty and transparency in yous."""
 guiding_prompt = """You are the chatbot's assistant. Your task is to choose a number between 0 and 3 based on the following conditions:
 
 0 - If the query is for casual conversation (just chatting. Will mostly ask other items directly)
-1 - If the answer requires accessing a vector database (when the user asks some fact about himself.
+1 - If the answer requires accessing a vector database (when the user asks some fact about himself).
 2 - If the chatbot requires Google calendar and/or Todoist for this day to respond.
 3 - If the chatbot requires Google calendar and/or Todoist for the next week/tomorrow to respond.
 4 - If the request means that ChatBot will add an event/task to Google Calendar/Todois
 5 - If you want to mark a completed task in todoist
 
-Your reply must consist solely of a single digit (0-4) based on the conditions above. Do not provide any explanations or additional text.
+Your reply must consist solely of a single digit (0-5) based on the conditions above. Do not provide any explanations or additional text.
 
 Examples:
 

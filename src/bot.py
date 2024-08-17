@@ -8,7 +8,8 @@ from colorama import Fore, Style, init
 from datetime import datetime
 from os import getenv, remove
 
-from api import mail, gmail_modify, speech_recognition
+from api import mail, gmail_modify, speech_recognition, tts
+from sql import sql_setting_get
 from llm_answer import llm_answer
     
 
@@ -136,6 +137,15 @@ async def message_handler(message: Message) -> None:
         await message.answer(answer, parse_mode='Markdown')
     except:
         await message.answer(answer)
+
+    
+    try:
+        tts_enabled = sql_setting_get('tts enabled')
+        if tts_enabled:
+            file_name = tts(text=answer)
+            await message.answer_voice(file_name)
+    except:
+        pass
 
 
 

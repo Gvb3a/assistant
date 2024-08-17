@@ -7,7 +7,7 @@ from beautiful_date import D, days, hours  # for google calendar. A comfortable 
 from datetime import datetime
 from colorama import Fore, Style, init  # for multicoloured output to the console
 from dotenv import load_dotenv  # to load values from .env
-from inspect import stack  # for the function name (print_colorama)
+from inspect import stack
 
 # google stuff (gmail). Why did I choose to learn from scratch instead of using the cat library?
 from google.auth.transport.requests import Request
@@ -15,21 +15,20 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-# google calendar library
+# google calendar library. https://github.com/kuzmoyev/google-calendar-simple-api
 from gcsa.google_calendar import GoogleCalendar
 from gcsa.event import Event
 
-from todoist_api_python.api import TodoistAPI  # Todoist
+from todoist_api_python.api import TodoistAPI  # Todoist. https://developer.todoist.com/rest/v2/#overview
 
-from chromadb import Client
+from chromadb import Client  # Local vector db
 
-from tavily import TavilyClient
+from tavily import TavilyClient  # Internet search
 
-from elevenlabs.client import ElevenLabs
+from elevenlabs.client import ElevenLabs  # Online tts
 from elevenlabs import save
 
-from config import LOCAL_WHISPER, LOCAL_LLM, NUMBER_OF_GMAIL_ACCOUNTS  # settings
-from sql import sql_select
+from sql import sql_select, sql_setting_get
 
 init()  # that cmd would also have a different coloured output
 load_dotenv()  # load variables from the .env file
@@ -59,7 +58,8 @@ vector_memory = chromadb_client.create_collection("all-my-documents")  # https:/
 
 
 CREDENTIALS_FILE = f'{path}\\client_secret.json'  # required for gmail and google calendar
-TOKEN_FILES = [f'{path}\\token_{i}.json' for i in range(NUMBER_OF_GMAIL_ACCOUNTS)]
+num_of_gmail_accounts = sql_setting_get('number of gmail accounts')
+TOKEN_FILES = [f'{path}\\token_{i}.json' for i in range(num_of_gmail_accounts)]
 
 
 calendar = GoogleCalendar(credentials_path=CREDENTIALS_FILE)  # type: ignore https://github.com/kuzmoyev/google-calendar-simple-api
@@ -79,12 +79,14 @@ def print_colorama(text: str = None, color: str = 'green'): # type: ignore
 
 def llm_api(messages: list, model: str = None, fast_model: str = False): # type: ignore
 
+    local_llm = sql_setting_get('local llm')
     if fast_model and model is None:
-        model = 'qwen2:1.5b' if LOCAL_LLM else 'llama-3.1-8b-instant'
+        model = 'qwen2:1.5b' if local_llm else 'llama-3.1-8b-instant'
     elif model is None:
-        model = 'phi3' if LOCAL_LLM else 'llama-3.1-70b-versatile'
+        model = 'phi3' if local_llm else 'llama-3.1-70b-versatile'
 
-    return ollama_api(messages, model) if LOCAL_LLM else groq_api(messages, model)
+    local_llm = sql_setting_get('local llm')
+    return ollama_api(messages, model) if local_llm else groq_api(messages, model)
 
 
 def groq_api(messages: list, model: str = 'llama-3.1-70b-versatile'):
@@ -146,7 +148,8 @@ def vector_datebase_incert(role: str, content: str):
 
 def speech_recognition(file_name: str) -> str:
 
-    if LOCAL_WHISPER:
+    local_whisper = sql_setting_get('local whisper')
+    if local_whisper:
         
         model = whisper.load_model('base') 
         result = model.transcribe(file_name)
@@ -162,7 +165,7 @@ def speech_recognition(file_name: str) -> str:
             
             text = translation.text
 
-    print_colorama(f'{text}. LOCAL_WHISPER={LOCAL_WHISPER}')
+    print_colorama(f'{text}. local_whisper={local_whisper}')
 
     return str(text).strip()
 
@@ -368,7 +371,7 @@ def todoist_close_task(task_id) -> bool:
 
 
 # Tavily. https://tavily.com/
-def tavily(text: str) -> str:
+def tavily_qna_search(text: str) -> str:  # TODO: tavily_client.search(RAG Application), include_images
     response = tavily_client.qna_search(text)
     print_colorama(response)
     return response
@@ -376,21 +379,34 @@ def tavily(text: str) -> str:
 
 # elevenlabs
 def tts(text: str, voice: str = 'Brittney Hart', model: str ='eleven_turbo_v2_5'):
-    try:
-        
-        file_name = 'tts - ' + ''.join(letter for letter in text[:64] if letter.isalnum() or letter==' ') + '.mp3'
+    
+    local_tts = sql_setting_get('local tts')
+    file_name = 'tts - ' + ''.join(letter for letter in text[:64] if letter.isalnum() or letter==' ') + '.mp3'
+
+    if local_tts:
 
         audio = elevenlabs_client.generate(
             text=text,
             voice=voice,
             model=model
-            )
-        
+        )
+            
         save(audio=audio, filename=file_name)
 
-        return file_name
+    else:
+        """
+        import torch
+        from TTS.api import TTS
+        
+        device = "cpu"
+
+        
+        tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=True).to(device)
+        tts.tts(text=str, speaker_wav=str, language=str)
+
+        tts.tts_to_file(text=text, speaker_wav=str, language=str, file_path=str)
+        """
+    return file_name
     
-    except Exception as e:
-        print(f'{Fore.RED}tts error: {e}{Style.RESET_ALL}')
-        return False
+    
 vector_datebase_load()

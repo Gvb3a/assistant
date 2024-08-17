@@ -1,12 +1,7 @@
 import sqlite3
-
-from colorama import Fore, Style, init
 from datetime import datetime
-from inspect import stack
 
-from config import system_prompt
-
-init()
+from config import db_defult_settings, system_prompt
 
 
 def sql_launch():
@@ -21,18 +16,23 @@ def sql_launch():
         )
         ''')
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Setting (
-        variable TEXT,
-        value TEXT,
-        description TEXT
+        CREATE TABLE IF NOT EXISTS Settings (
+        name TEXT,
+        value INT
         )
         ''')
     
-    row = cursor.execute(f'SELECT * FROM History').fetchall()
-    if row == []:
+    history_row = cursor.execute(f'SELECT * FROM History').fetchall()
+    if history_row == []:
         cursor.execute("INSERT INTO History (role, content, time) VALUES (?, ?, ?)", ('system', system_prompt, datetime.now().strftime('%Y.%m.%d %H:%M')))
 
-    print(f'Database size: {len(row)}')
+    setting_row = cursor.execute(f'SELECT * FROM Settings').fetchall()
+    if setting_row == []:
+        print('Update Settings to db_defult_settings')
+        for setting in db_defult_settings:
+            cursor.execute("INSERT INTO Settings (name, value) VALUES (?, ?)", (setting['name'], setting['value']))
+
+    print(f'Database size: {len(history_row)}')
 
     connection.commit()
     connection.close()
@@ -66,6 +66,28 @@ def sql_incert(role: str, content: str):
     
     time = datetime.now()
     cursor.execute("INSERT INTO History (role, content, time) VALUES (?, ?, ?)", (str(role), str(content), str(time)))
+
+    connection.commit()
+    connection.close()
+
+
+def sql_setting_get(name: str) -> int:
+    connection = sqlite3.connect('assistant.db')
+    cursor = connection.cursor()
+    
+    result = cursor.execute(f"SELECT value FROM Settings WHERE name = '{name}'").fetchall()[0][0]
+
+    connection.commit()
+    connection.close()
+
+    return result
+
+
+def sql_setting_update(name: str, new_value: int) -> None:
+    connection = sqlite3.connect('assistant.db')
+    cursor = connection.cursor()
+    
+    cursor.execute("UPDATE Settings SET value = ? WHERE name = ?", (new_value, name))
 
     connection.commit()
     connection.close()
