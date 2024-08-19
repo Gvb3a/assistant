@@ -107,7 +107,7 @@ async def command_mail(message: Message) -> None:
 
 
 @dp.message(Command('regenerate'))
-async def command_mail(message: Message) -> None:
+async def command_regenerate(message: Message) -> None:
     chat_id = message.chat.id
     message_id = message.message_id
 
@@ -141,17 +141,22 @@ async def message_handler(message: Message) -> None:
     else:
         text = message.text 
 
-    answer, images = llm_answer(text)
+    answer, images = await llm_answer(text)
     
     try:
         if images == []:
             await message.answer(answer, parse_mode='Markdown')
         else:
-            caption = answer[:1024]
-            media = [InputMediaPhoto(media=images[0], caption=caption)]
+            caption = answer[:1000]
+            media = [InputMediaPhoto(media=FSInputFile(path=images[0]), 
+                                     caption=caption)]
             for image in images[1:]:
-                media.append(InputMediaPhoto(media=image))
+                media.append(InputMediaPhoto(media=FSInputFile(path=image)))
             await message.answer_media_group(media=media)
+
+            for image in images:
+                remove(image)
+
     except Exception as e:
         print(e)
         await message.answer(answer)

@@ -1,13 +1,16 @@
 from datetime import datetime
 from colorama import Fore, init, Style
+import asyncio
 
 from api import (llm_api, vector_datebase_incert, vector_datebase_search, calendar_add_event, calendar_get_events, 
                  todoist_new_task, todoist_get_tasks, todoist_close_task, tavily_full_search, tavily_qsearch,
-                 wolfram_quick_answer)
+                 ask_wolfram_alpha)
 from sql import sql_select, sql_incert, sql_delete_last
 from config import guiding_prompt, prompt_for_close_task, prompt_for_add, prompt_for_transform_query
 
+
 init()
+
 
 def llm_regenerate() -> tuple[str, list]:
     
@@ -26,7 +29,10 @@ def llm_regenerate() -> tuple[str, list]:
     return answer, []
 
 
-def llm_answer(user_message: str) -> tuple[str, list]:
+async def llm_answer(user_message: str) -> tuple[str, list]:
+    '''The basic command for llm. This is where the check (what to use), the associated calculation (e.g. wolfram alpha) and the answer itself take place. 
+    
+    I had to make it asynchronous because of ask_wolfram_alpha, which is asynchronous.'''
 
     sql_incert('user', user_message)  # save user_message to db
 
@@ -42,8 +48,7 @@ def llm_answer(user_message: str) -> tuple[str, list]:
 
 
     response_directions = [None, 'Memory', 'Calendar/Todoist for day', 'Calendar/Todoist for week', 'add event/task', 
-                           'close task', 'quick search internet', 'deep search internet', 'quick wolfram alpha answer', 'full wolfram alpha answer', 
-                           'regenerate']
+                           'close task', 'quick search internet', 'deep search internet', 'wolfram alpha', 'regenerate']
     guiding_messages = [{"role": "system", "content": guiding_prompt},
                         {"role": "user", "content": user_message}]  # TODO: full history
     for _ in range(3):
@@ -60,9 +65,10 @@ def llm_answer(user_message: str) -> tuple[str, list]:
     print(f'llm_answer. responce direction: {response_direction}')
 
     if response_direction is not None:
-        
+        long_system_message = False  # If the system message is very large, I will remove two messages to simplify the llm
         # query transformation. For example wolfram alpha will not understand Use wolfram alpha and solve 3x-1=11, so we make llm transform the query
-        if response_direction in ['quick wolfram alpha answer', 'full wolfram alpha answer']:
+        if response_direction == 'wolfram alpha':
+
             transformed_messages = [{
                 'role': 'system',
                 'content': prompt_for_transform_query
@@ -102,25 +108,27 @@ def llm_answer(user_message: str) -> tuple[str, list]:
         
         elif response_direction  == 'quick search internet':
             
-            answer, images = tavily_qsearch(text=user_message)
+            answer, images = await tavily_qsearch(text=user_message)
 
-            system_message = f'Internet search short results: {answer}. The images will be attached to your reply. The answer should be no more than 1000 characters'
+            system_message = f'Internet search short results: {answer}\nThe images (wolfram alpha and step by step answer page) will be attached to your reply. The answer should be no more than 1000 characters'
 
         elif response_direction  == 'deep search internet':
+
+            long_system_message = True
             
             answer = tavily_full_search(text=user_message)
 
             system_message = f'Internet search raw content: {answer}'
 
-        elif response_direction  == 'quick wolfram alpha answer':
+        elif response_direction  == 'wolfram alpha':
             
-            wolfram_answer = wolfram_quick_answer(transformed_query)
-            system_message = f'Wolfram alpha answer: {wolfram_answer}'
+            long_system_message = True
 
-        elif response_direction  == 'full wolfram alpha answer':
-            
-            wolfram_answer = wolfram_quick_answer(transformed_query)
-            system_message = f'Access to full wolfram alpha answer has not been made yet. So tell the user. Quick answer {wolfram_answer}'
+            wolfram_answer, step_by_step, images = await ask_wolfram_alpha(transformed_query)
+            system_message = f'''Wolfram alpha short answer: {wolfram_answer}. 
+                \nStep by step solutions (may be useless): {step_by_step}. 
+                \nWolframAlpha answer images will be attached to your response.  
+                The answer should be no more than 1000 characters'''
 
         elif response_direction  == 'regenerate':
             sql_delete_last()
@@ -131,6 +139,9 @@ def llm_answer(user_message: str) -> tuple[str, list]:
             
         messages.append({'role': 'system', 'content': system_message})
         sql_incert('system', system_message)
+
+        if long_system_message:
+            messages = messages[2:]
 
     else:
         system_message = None

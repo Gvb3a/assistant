@@ -1,6 +1,10 @@
 import os
-import requests  # for gmail requests
+import requests  # for gmail and wolfram alpha requests
 import whisper  # for local speech recognition
+import asyncio
+import aiohttp
+import aiofiles
+from bs4 import BeautifulSoup
 from groq import Groq  # for online llm
 from ollama import chat  # for local llm
 from beautiful_date import D, days, hours  # for google calendar. A comfortable way to set the date
@@ -8,7 +12,6 @@ from datetime import datetime
 from colorama import Fore, Style, init  # for multicoloured output to the console
 from dotenv import load_dotenv  # to load values from .env
 from inspect import stack
-from typing import Literal
 from urllib.parse import quote
 
 # google stuff (gmail). Why did I choose to learn from scratch instead of using the cat library?
@@ -58,7 +61,8 @@ elevenlabs_client = ElevenLabs(api_key=elevenlabs_api_key)
 chromadb_client = Client()  # chromadb. Local vector datebase
 vector_memory = chromadb_client.create_collection("all-my-documents")  # https://github.com/chroma-core/chroma
 
-WOLFRAM_SIMPLE_API = os.getenv('WOLFRAM_ALPHA_SIMPLE_API_KEY')
+WOLFRAM_SIMPLE_API = os.getenv('WOLFRAM_SIMPLE_API_KEY')
+WOLFRAM_SHOW_STEPS_API = os.getenv('WOLFRAM_SHOW_STEPS_RESULT')
 
 
 CREDENTIALS_FILE = f'{path}\\client_secret.json'  # required for gmail and google calendar
@@ -82,7 +86,7 @@ def print_colorama(text: str = None, color: str = 'green'):
     print(f'{color}{func}{Style.RESET_ALL}: {str(text)}')
 
 
-def llm_api(messages: list, model: str = None, fast_model: str = False):
+def llm_api(messages: list, model: str = None, fast_model: str = False) -> str:
     local_llm = sql_setting_get('local llm')
     if fast_model and model is None:
         model = 'qwen2:1.5b' if local_llm else 'llama-3.1-8b-instant'  # TODO: defult models in setting
@@ -93,14 +97,14 @@ def llm_api(messages: list, model: str = None, fast_model: str = False):
     return ollama_api(messages, model) if local_llm else groq_api(messages, model)
 
 
-def groq_api(messages: list, model: str = 'llama-3.1-70b-versatile'):
+def groq_api(messages: list, model: str = 'llama-3.1-70b-versatile') -> str:
     response = groq_client.chat.completions.create(
             messages=messages,
             model=model)
     return response.choices[0].message.content
 
 
-def ollama_api(messages: list, model: str = 'phi3'):
+def ollama_api(messages: list, model: str = 'phi3') -> str:
     response = chat(model=model, 
                     messages=messages)
     return response['message']['content']
@@ -380,23 +384,6 @@ def todoist_close_task(task_id) -> bool:
     return todoist_api.close_task(task_id=str(task_id))
 
 
-# Tavily. https://tavily.com/
-def tavily_qsearch(text: str):
-    '''Returns a short answer on the topic using the internet and photos. (include_answer=True, max_results=0)'''
-    response = tavily_client.search(query=text, search_depth='advanced', include_answer=True, include_images=True, max_results=0)
-    answer = response['answer']
-    images = response['images']
-    print_colorama(response)
-    return answer, images
-
-
-def tavily_full_search(text: str, max_results: int = 2):
-    '''Returns text from multiple pages on a web request (include_raw_content=True)'''
-    response = tavily_client.search(query=text, search_depth='basic', include_raw_content=True, max_results=max_results)
-    results = response['results']
-    print_colorama(results)
-    return results
-
 
 # elevenlabs
 def tts(text: str, voice: str = 'Brittney Hart', model: str ='eleven_turbo_v2_5'):
@@ -430,12 +417,116 @@ def tts(text: str, voice: str = 'Brittney Hart', model: str ='eleven_turbo_v2_5'
     return file_name
     
 
-
 # wolfram alpha
-def wolfram_quick_answer(text):
-    answer = requests.get(f'https://api.wolframalpha.com/v1/result?appid={WOLFRAM_SIMPLE_API}&i={quote(text)}').text
-    print_colorama(f'text={text}, answer={answer}')
-    return answer
+async def download_image_async(url: str, filename: str):
+    '''Asynchronously download an image from a URL. Returns path to image or False'''
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, timeout=60) as response:
+            
+            if response.status == 200:
+                async with aiofiles.open(filename, 'wb') as file:
+                    await file.write(await response.read())
+
+                full_path = os.path.abspath(filename)
+                return full_path
+            
+            else:
+                return False
+            
+
+async def wolfram_quick_answer(text: str) -> str:
+    '''Return wolfram short answer (asynchronously)'''
+    query = quote(text)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f'https://api.wolframalpha.com/v1/result?appid={WOLFRAM_SIMPLE_API}&i={query}') as response:
+            answer = await response.text()
+            print_colorama(f'text={text}, answer={answer}')
+            return answer
 
 
-vector_datebase_load()
+async def wolfram_simple_answer(text: str) -> str | bool:
+    '''Return link to wolfram simple answer (asynchronously)'''
+    query = quote(text)
+    link = f'https://api.wolframalpha.com/v1/simple?appid={WOLFRAM_SIMPLE_API}&i={query}%3F'
+
+    filename = f"wolfram_simple_answer-{datetime.now().strftime('%Y%m%d_%H%M%S%f')}.png"
+    path = await download_image_async(link, filename)
+
+    print_colorama(str(path))
+
+    return str(path)
+
+
+async def wolfram_step_by_step(text: str) -> tuple[str, list]:
+    '''Returns a step by step solution in the form of a string and a list of picture links (asynchronously)'''
+    query = quote(text)
+    url = f'https://api.wolframalpha.com/v1/query?appid={WOLFRAM_SHOW_STEPS_API}&input={query}&podstate=Step-by-step%20solution'
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            content = await response.text()
+            soup = BeautifulSoup(content, "xml")
+
+            subpods = soup.find_all("subpod", {"title": "Possible intermediate steps"})
+            
+            step_images = []
+            step_plain = ''
+
+            for subpod in subpods:
+                img_tag = subpod.find("img")
+                if img_tag:
+                    step_resp_img = img_tag.get("src")
+                    step_images.append(step_resp_img)
+                
+                plain_tag = subpod.find('plaintext')
+                step_resp = plain_tag.get_text('\n', strip=True)
+                step_resp = step_resp.replace('Answer: | \n |', '\nAnswer:\n') if plain_tag else False
+                if step_resp:
+                    step_plain += step_resp + '\n\n'
+            
+            nw = datetime.now().strftime('%Y%m%d_%H%M%S%f')
+            downloaded_image_paths = await asyncio.gather(*[download_image_async(url, f'wolfram_step_by_step-{nw}-{i}.png') for i, url in enumerate(step_images)])
+
+            print_colorama(f'{url}, images: {step_images}')
+            return step_plain, downloaded_image_paths
+
+
+async def ask_wolfram_alpha(text: str) -> tuple[str, str, list]:
+    '''Asynchronous function. Returns quick response, step by step solution text and downloaded image paths (simple(page) and step by step)'''
+    # all three queries take 2 seconds
+    quick_answer_task = asyncio.create_task(wolfram_quick_answer(text))
+    simple_answer_task = asyncio.create_task(wolfram_simple_answer(text))
+    step_by_step_task = asyncio.create_task(wolfram_step_by_step(text))
+
+    quick_answer = await quick_answer_task
+    simple_answer_link = await simple_answer_task
+    step_by_step_solution, step_images = await step_by_step_task
+
+    images = [image for image in step_images if image]
+    if simple_answer_link:
+        images.insert(0, simple_answer_link)
+    
+    print_colorama(text)
+    return quick_answer, step_by_step_solution, images
+
+
+
+# Tavily. https://tavily.com/
+async def tavily_qsearch(text: str):
+    '''Asynchronous function. Returns a short answer on the topic using the internet and photos. (include_answer=True, max_results=0)'''
+    response = tavily_client.search(query=text, search_depth='advanced', include_answer=True, include_images=True, max_results=0)
+    answer = response['answer']
+    images_url = response['images']
+    nw = datetime.now().strftime('%Y%m%d_%H%M%S%f')
+    downloaded_images = await asyncio.gather(*[download_image_async(url, f'tavily_qsearch-{nw}-{i}.png') for i, url in enumerate(images_url)])
+    images = [image for image in downloaded_images if image]
+    print_colorama(f'responce: {response}, images: {images}')
+    return answer, images
+
+
+def tavily_full_search(text: str, max_results: int = 2):
+    '''Returns text from multiple pages on a web request (include_raw_content=True)'''
+    response = tavily_client.search(query=text, search_depth='basic', include_raw_content=True, max_results=max_results)
+    results = response['results']
+    print_colorama(results)
+    return results

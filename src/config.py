@@ -10,7 +10,7 @@ db_defult_settings = [
 
 
 system_prompt = """You are a helpful assistant with access to various services (google calendar, todoist), but mostly you just chat in Telegram. You communicate with Boris, the developer who created you.  Access to services is provided in the following way: after the user's request, if needed from the system, there will be a message. Provide this information only when it is relevant to the conversation. Always prioritise honesty and transparency in yous."""
-n = 10
+n = 9
 guiding_prompt = f"""You are the chatbot's assistant. Your task is to write a number between 0 and {n} based on the following conditions:
 
 0 - If the query is for casual conversation (just chatting. Will mostly ask other items directly). Examples: How's it going; Remember, my favourite book is Lord of the Rings; The internet is so cool
@@ -21,9 +21,8 @@ guiding_prompt = f"""You are the chatbot's assistant. Your task is to write a nu
 5 - If the request means that ChatBot marks the task complete. Examples: Mark the task completed Go to the gym.
 6 - If the answer require internet access to reply. ChatBot will receive a short reply with up-to-date information. Examples: What is the current status of Elon Mask, Find the pictures of Tolkien, Search the internet: who won the Paris Olympics.
 7 - If the answer require full text from the Internet (for example, the entire lyrics of a song). Examples: lyrics of Bohemian Rhapsody; Find the translation of the song She loves You; Find the text from the langchain documentation about agent
-8 - If the answer requires a wolfram alpha short answer (calculate something). Examples: How much is (4878^56)/912; frac(56!)(4!*6!) Solution Answer 3x^2-7x+4=0
-9 - If the answer requires a wolfram alpha step-by-step solution.  Examples: Solve the equation 5x^2-6x+3=0 step by step
-10 - User asks to regenerate message. Examples: Regenerate. You wrote rubbish
+8 - If the answer requires a wolfram alpha (calculate something, show solution). Examples: How much is (4878^56)/912; frac(56!)(4!*6!); Solution Answer 3x^2-7x+4=0; Solve the equation 5x^2-6x+3=0 step by step; Plot 3x=1
+9 - User asks to regenerate message. Examples: Regenerate. You wrote rubbish
 
 The user can also directly say what to use. For example, use wolfram alpha short answer to ...
 Your reply must consist solely of a single digit (0-{n}) based on the conditions above. Do not provide any explanations or additional text."""
