@@ -1,10 +1,13 @@
 from datetime import datetime
 from colorama import Fore, init, Style
 
-from api import llm_api, vector_datebase_incert, vector_datebase_search, calendar_add_event, calendar_get_events, todoist_new_task, todoist_get_tasks, todoist_close_task, tavily_search
+from api import (llm_api, vector_datebase_incert, vector_datebase_search, calendar_add_event, calendar_get_events, 
+                 todoist_new_task, todoist_get_tasks, todoist_close_task, tavily_full_search, tavily_qsearch,
+                 wolfram_quick_answer)
 from sql import sql_select, sql_incert, sql_delete_last
-from config import guiding_prompt, prompt_for_close_task, prompt_for_add
+from config import guiding_prompt, prompt_for_close_task, prompt_for_add, prompt_for_transform_query
 
+init()
 
 def llm_regenerate() -> tuple[str, list]:
     
@@ -38,9 +41,11 @@ def llm_answer(user_message: str) -> tuple[str, list]:
     images = []  # internet search and wolfram alpha returns pictures
 
 
-    response_directions = [None, 'Memory', 'Calendar/Todoist for day', 'Calendar/Todoist for week', 'add event/task', 'close task', 'search internet', 'wolfram alpha', 'regenerate']
+    response_directions = [None, 'Memory', 'Calendar/Todoist for day', 'Calendar/Todoist for week', 'add event/task', 
+                           'close task', 'quick search internet', 'deep search internet', 'quick wolfram alpha answer', 'full wolfram alpha answer', 
+                           'regenerate']
     guiding_messages = [{"role": "system", "content": guiding_prompt},
-                        {"role": "user", "content": user_message}]
+                        {"role": "user", "content": user_message}]  # TODO: full history
     for _ in range(3):
         
         try:
@@ -52,9 +57,24 @@ def llm_answer(user_message: str) -> tuple[str, list]:
     else:
         response_direction = None
 
-
+    print(f'llm_answer. responce direction: {response_direction}')
 
     if response_direction is not None:
+        
+        # query transformation. For example wolfram alpha will not understand Use wolfram alpha and solve 3x-1=11, so we make llm transform the query
+        if response_direction in ['quick wolfram alpha answer', 'full wolfram alpha answer']:
+            transformed_messages = [{
+                'role': 'system',
+                'content': prompt_for_transform_query
+            },
+            {
+                'role': 'user',
+                'content': user_message
+            }]
+            transformed_query = llm_api(messages=transformed_messages)
+            print(f'llm_answer. transformed_query={transformed_query}')
+
+
 
         if response_direction == 'Memory':
             memory_results = vector_datebase_search(user_message)
@@ -80,16 +100,27 @@ def llm_answer(user_message: str) -> tuple[str, list]:
                     print(f'{Fore.RED}llm_answer{Style.RESET_ALL}. {response_direction}: {e}')
                     system_message = f'Error: {e}'
         
-        elif response_direction  == 'search internet':
+        elif response_direction  == 'quick search internet':
             
-            answer, images = tavily_search(text=user_message)
+            answer, images = tavily_qsearch(text=user_message)
 
-            system_message = f'Internet search results: {answer}. The images will be attached to your reply. The answer should be no more than 1000 characters'
+            system_message = f'Internet search short results: {answer}. The images will be attached to your reply. The answer should be no more than 1000 characters'
 
-
-        elif response_direction  == 'wolfram alpha':
+        elif response_direction  == 'deep search internet':
             
-            system_message = f'Access to wolfram alpha has not been made yet. So tell the user'
+            answer = tavily_full_search(text=user_message)
+
+            system_message = f'Internet search raw content: {answer}'
+
+        elif response_direction  == 'quick wolfram alpha answer':
+            
+            wolfram_answer = wolfram_quick_answer(transformed_query)
+            system_message = f'Wolfram alpha answer: {wolfram_answer}'
+
+        elif response_direction  == 'full wolfram alpha answer':
+            
+            wolfram_answer = wolfram_quick_answer(transformed_query)
+            system_message = f'Access to full wolfram alpha answer has not been made yet. So tell the user. Quick answer {wolfram_answer}'
 
         elif response_direction  == 'regenerate':
             sql_delete_last()

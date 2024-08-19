@@ -9,6 +9,7 @@ from colorama import Fore, Style, init  # for multicoloured output to the consol
 from dotenv import load_dotenv  # to load values from .env
 from inspect import stack
 from typing import Literal
+from urllib.parse import quote
 
 # google stuff (gmail). Why did I choose to learn from scratch instead of using the cat library?
 from google.auth.transport.requests import Request
@@ -57,18 +58,21 @@ elevenlabs_client = ElevenLabs(api_key=elevenlabs_api_key)
 chromadb_client = Client()  # chromadb. Local vector datebase
 vector_memory = chromadb_client.create_collection("all-my-documents")  # https://github.com/chroma-core/chroma
 
+WOLFRAM_SIMPLE_API = os.getenv('WOLFRAM_ALPHA_SIMPLE_API_KEY')
+
 
 CREDENTIALS_FILE = f'{path}\\client_secret.json'  # required for gmail and google calendar
 num_of_gmail_accounts = sql_setting_get('number of gmail accounts')
 TOKEN_FILES = [f'{path}\\token_{i}.json' for i in range(num_of_gmail_accounts)]
 
 
-calendar = GoogleCalendar(credentials_path=CREDENTIALS_FILE)  # type: ignore https://github.com/kuzmoyev/google-calendar-simple-api
+calendar = GoogleCalendar(credentials_path=CREDENTIALS_FILE)  #https://github.com/kuzmoyev/google-calendar-simple-api
 
 
 
-def print_colorama(text: str = None, color: str = 'green'): # type: ignore
-    # this function is in function.py, but it is better to declare it again.
+def print_colorama(text: str = None, color: str = 'green'):
+    '''When this function is called in another function, its green name is displayed (via stak) and then the text that is passed.
+    Made to avoid writing {Fore.GREEN}{func name}{Style.RESET_ALL}: {text} all the time.'''
     colors = {'green': Fore.GREEN, 'red': Fore.RED, 'yellow': Fore.YELLOW}
     
     func = stack()[1].function
@@ -78,11 +82,10 @@ def print_colorama(text: str = None, color: str = 'green'): # type: ignore
     print(f'{color}{func}{Style.RESET_ALL}: {str(text)}')
 
 
-def llm_api(messages: list, model: str = None, fast_model: str = False): # type: ignore
-
+def llm_api(messages: list, model: str = None, fast_model: str = False):
     local_llm = sql_setting_get('local llm')
     if fast_model and model is None:
-        model = 'qwen2:1.5b' if local_llm else 'llama-3.1-8b-instant'
+        model = 'qwen2:1.5b' if local_llm else 'llama-3.1-8b-instant'  # TODO: defult models in setting
     elif model is None:
         model = 'phi3' if local_llm else 'llama-3.1-70b-versatile'
 
@@ -105,7 +108,7 @@ def ollama_api(messages: list, model: str = 'phi3'):
 
 
 def vector_datebase_load():
-    role, content, time = sql_select('*') # type: ignore
+    role, content, time = sql_select('*')
     
     print_colorama()
 
@@ -130,7 +133,7 @@ def vector_datebase_search(text: str, n_results: int = 2):
     # {'ids': [[str, str]], 'distances': [[float, float]], 'metadatas': [[dict, dict]], 'embeddings': None, 'documents': [[str, str]], 'uris': None, 'data': None, 'included': ['metadatas', 'documents', 'distances']}
     pretty_result = []
     for i in range(len(results['ids'][0])):
-        pretty_result.append(f"{results['metadatas'][0][i]['role']} at {results['metadatas'][0][i]['time']}: {results['documents'][0][i]}") # type: ignore
+        pretty_result.append(f"{results['metadatas'][0][i]['role']} at {results['metadatas'][0][i]['time']}: {results['documents'][0][i]}")
 
     return pretty_result
 
@@ -274,7 +277,8 @@ def gmail_message(message_id: str, creds: str):
     return snippet, sender, to, subject, unread
 
 
-def mail():  # I would move it to function.py (maybe rename it to sql.py), but it would be a circular import
+def mail() -> tuple[str, dict]:  # I would move it to function.py (maybe rename it to sql.py), but it would be a circular import
+    '''Returns str with all emails (example output in the function) and also a dictionary with emails id'''
     """
     # Example result:
     1.1: *from*  # bold (text go as Markdown)
@@ -292,12 +296,12 @@ def mail():  # I would move it to function.py (maybe rename it to sql.py), but i
     result = str()
     list_of_mail_lists  = gmail_list(max_results=15)
     # {'messages': [{'id': 'str', 'threadId': 'str'}, ...], 'nextPageToken': 'str', 'resultSizeEstimate': int}
-    dict_of_unread = {}
+    dict_of_unread = {}  # 1.1: <id>
 
     for mail_list in list_of_mail_lists:
 
-        mail_index = list_of_mail_lists.index(mail_list)  # for numbering accounts 1.x, 2.x
-        count_of_unread_message = 3  # unread -> read -> read -> unread -> read -> read -> read -> break
+        mail_index = list_of_mail_lists.index(mail_list)  # for numbering accounts
+        count_of_unread_message = 3  # unread -> read -> unread -> read -> read -> break
         unread_messages = False  # To check if there are any unread messages at all
 
         # In gmail_message, I need the creds variable, and since gmail_load_credentials returns a list of creds, we take the creds at index
@@ -337,7 +341,8 @@ def mail():  # I would move it to function.py (maybe rename it to sql.py), but i
 
 # Google Calendar
 def calendar_get_events(start_time=D.today(), duration: int = 1) -> list:
-    # returns a list of all events from start_time to end_time. duration in days
+    '''Returns a list of all events from start_time to end_time. duration in days. By default will return today's events'''
+
     end_time = start_time + duration * days
     events = calendar[start_time:end_time:'startTime']
 
@@ -345,7 +350,7 @@ def calendar_get_events(start_time=D.today(), duration: int = 1) -> list:
 
 
 
-def calendar_add_event(summary: str = '(No title)', start: datetime = D.today(), duration_in_hours: int = 24): # type: ignore
+def calendar_add_event(summary: str = '(No title)', start: datetime = D.today(), duration_in_hours: int = 24):
     end = start + duration_in_hours * hours
     event = Event(summary, start=start, end=end)
     return calendar.add_event(event)
@@ -353,6 +358,7 @@ def calendar_add_event(summary: str = '(No title)', start: datetime = D.today(),
 
 # Todoist
 def todoist_get_tasks() -> list:
+    '''Returns a list of all todoist tasks, their date and id'''
     tasks = todoist_api.get_tasks()
     tasks_list = []
     for task in tasks:
@@ -362,27 +368,39 @@ def todoist_get_tasks() -> list:
     return tasks_list
 
 
-def todoist_new_task(content: str, due_string: str = None) -> str: # type: ignore
+def todoist_new_task(content: str, due_string: str = None) -> str:
+    '''Create new todoist task. Returns id. 
+    About due date: https://todoist.com/help/articles/introduction-to-due-dates-and-due-times-q7VobO'''
     task = todoist_api.add_task(content=content, due_string=due_string)
     return task.id
 
 
 def todoist_close_task(task_id) -> bool:
+    '''Marks todoist tasks completed by id. Returns True if successful, otherwise False'''
     return todoist_api.close_task(task_id=str(task_id))
 
 
 # Tavily. https://tavily.com/
-def tavily_search(text: str, search_depth: Literal['basic', 'advanced'] = 'advanced', max_results: int = 0):
-    response = tavily_client.search(query=text, search_depth=search_depth, include_answer=True, include_images=True, max_results=max_results)
+def tavily_qsearch(text: str):
+    '''Returns a short answer on the topic using the internet and photos. (include_answer=True, max_results=0)'''
+    response = tavily_client.search(query=text, search_depth='advanced', include_answer=True, include_images=True, max_results=0)
     answer = response['answer']
     images = response['images']
     print_colorama(response)
     return answer, images
 
 
+def tavily_full_search(text: str, max_results: int = 2):
+    '''Returns text from multiple pages on a web request (include_raw_content=True)'''
+    response = tavily_client.search(query=text, search_depth='basic', include_raw_content=True, max_results=max_results)
+    results = response['results']
+    print_colorama(results)
+    return results
+
+
 # elevenlabs
 def tts(text: str, voice: str = 'Brittney Hart', model: str ='eleven_turbo_v2_5'):
-    
+    '''text to mp3. Returs file name'''
     local_tts = sql_setting_get('local tts')
     file_name = 'tts - ' + ''.join(letter for letter in text[:64] if letter.isalnum() or letter==' ') + '.mp3'
 
@@ -411,5 +429,13 @@ def tts(text: str, voice: str = 'Brittney Hart', model: str ='eleven_turbo_v2_5'
 
     return file_name
     
+
+
+# wolfram alpha
+def wolfram_quick_answer(text):
+    answer = requests.get(f'https://api.wolframalpha.com/v1/result?appid={WOLFRAM_SIMPLE_API}&i={quote(text)}').text
+    print_colorama(f'text={text}, answer={answer}')
+    return answer
+
 
 vector_datebase_load()

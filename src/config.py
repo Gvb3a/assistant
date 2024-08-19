@@ -10,73 +10,23 @@ db_defult_settings = [
 
 
 system_prompt = """You are a helpful assistant with access to various services (google calendar, todoist), but mostly you just chat in Telegram. You communicate with Boris, the developer who created you.  Access to services is provided in the following way: after the user's request, if needed from the system, there will be a message. Provide this information only when it is relevant to the conversation. Always prioritise honesty and transparency in yous."""
-guiding_prompt = """You are the chatbot's assistant. Your task is to choose a number between 0 and 3 based on the following conditions:
+n = 10
+guiding_prompt = f"""You are the chatbot's assistant. Your task is to write a number between 0 and {n} based on the following conditions:
 
-0 - If the query is for casual conversation (just chatting. Will mostly ask other items directly)
-1 - If the answer requires accessing a vector database (when the user asks some fact about himself).
-2 - If the chatbot requires Google calendar and/or Todoist for this day to respond.
-3 - If the chatbot requires Google calendar and/or Todoist for the next week/tomorrow to respond.
-4 - If the request means that ChatBot will add an event/task to Google Calendar/Todois
-5 - If you want to mark a completed task in todoist
-6 - If the answer requires access to the internet (for precise information that llm may not have)
-7 - If the answer requires access to wolfram alpha (calculate something, solve something)
-8 - User asks to regenerate message
+0 - If the query is for casual conversation (just chatting. Will mostly ask other items directly). Examples: How's it going; Remember, my favourite book is Lord of the Rings; The internet is so cool
+1 - If the answer requires accessing a vector database (when the user asks some fact about himself). Examples: What's my favourite book
+2 - If the chatbot requires Google calendar and/or Todoist for this day (or no time) to respond. Examples: What I've got today; What I need to do
+3 - If the chatbot requires Google calendar and/or Todoist for the next week/tomorrow to respond. Examples: What's my plan for this week; What about tomorrow?
+4 - If the request means that ChatBot will add an event/task to Google Calendar/Todois. Examples: Add a new event for today from 12:00 to 13:30; Add a new task(reminder): change the aquarium at 6:00 p.m.
+5 - If the request means that ChatBot marks the task complete. Examples: Mark the task completed Go to the gym.
+6 - If the answer require internet access to reply. ChatBot will receive a short reply with up-to-date information. Examples: What is the current status of Elon Mask, Find the pictures of Tolkien, Search the internet: who won the Paris Olympics.
+7 - If the answer require full text from the Internet (for example, the entire lyrics of a song). Examples: lyrics of Bohemian Rhapsody; Find the translation of the song She loves You; Find the text from the langchain documentation about agent
+8 - If the answer requires a wolfram alpha short answer (calculate something). Examples: How much is (4878^56)/912; frac(56!)(4!*6!) Solution Answer 3x^2-7x+4=0
+9 - If the answer requires a wolfram alpha step-by-step solution.  Examples: Solve the equation 5x^2-6x+3=0 step by step
+10 - User asks to regenerate message. Examples: Regenerate. You wrote rubbish
 
-The user can also directly say what to use. For example, use wolfram alpha to ... 
-Your reply must consist solely of a single digit (0-8) based on the conditions above. Do not provide any explanations or additional text.
-
-Examples:
-
-1. User: How's it going?
-   You: 0
-
-2. User: Remember, my favourite book is Lord of the Rings.
-   You: 0
-
-3. User: The internet is so cool
-   You: 0
-
-4. User: What's my favourite book
-   You: 1
-
-5. User: What I've got today
-   You: 2
-
-6. User: What's my plan for this week
-   You: 3
-
-7. User: What about tomorrow?
-   You: 3
-
-8. User: Add a new event for today from 12:00 to 13:30.
-   You: 4
-
-9. User: Add a new task(reminder): change the aquarium at 6:00 p.m.
-   You: 4
-
-10. User: Mark the task completed Go to the gym.
-   You: 5
-
-11. User: What is the current status of Elon Mask
-   You: 6
-
-12. User: Find the pictures of Tolkien
-   You: 6
-
-13. User: Search the internet: <any text>
-   You: 6
-
-14. User: Calculate how much is (4878^56)/912
-   You: 7
-
-15. User: Solve 3x^2-7x+4=0
-   You: 7
-
-16. User: Regenerate. You wrote rubbish
-   You: 8
-
-
-Now, respond to the query with the appropriate digit."""
+The user can also directly say what to use. For example, use wolfram alpha short answer to ...
+Your reply must consist solely of a single digit (0-{n}) based on the conditions above. Do not provide any explanations or additional text."""
 
 prompt_for_add = """Based on the user's request and the instructions, you will have to call the function and substitute the values. Output only the function without any quotation marks (as in the examples)
 
@@ -121,6 +71,43 @@ Examples:
 
 2. User: Mark brushing teeth for today as done (['Go to gym, date: None, id: 8257183536', 'Brush teeth, date: every day, id: 8259445526']))
    You: todoist_close_task(8259445526)
+
+Now, respond to the query by following the rules
+"""
+
+
+prompt_for_transform_query = """You have to turn a user query into a query that wolfram alpha will understand (If the enquiry is normal, leave it that way).
+
+Examples:
+
+1. User: Use wolfram alpha and solve this equation 3x-1=11
+   You: 3x-1=11
+
+2. User: Solve 3x^2-7x+4=0
+   You: Solve 3x^2-7x+4=0
+
+3. User: {sqrt2}}^{sqrt{2}
+   You: sqrt[2]^sqrt[2]
+
+4. User: Slve 2x^2=16
+   You: Solve 2x^2=16
+
+5. User: (567^34)/435-6758
+   You: (567^34)/435-6758
+
+6. User: Sum of roots 8x^3-4x^2+11x-36=0
+   You: Sum of roots 8x^3-4x^2+11x-36=0
+
+Также wolfram alpha принимает только английский язык
+
+7. User: x в кубе равно 8
+   You: x^3=8
+
+8. User: 14x meno 5 uguale 0
+   You: 14x-5=0
+
+9. User: Calculer 456^45
+   You: Calculate 456^45
 
 Now, respond to the query by following the rules
 """
