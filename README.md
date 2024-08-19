@@ -17,6 +17,23 @@ Create a telegram bot with artificial intelligence that will use google calendar
 - [Coqui.ai](https://github.com/coqui-ai/TTS) - local tts
 - [pythonanywhere](https://www.pythonanywhere.com/) - as a possible host
 
+### Lanch
+Download the necessary libraries (requirements.txt)\
+Create this .env file
+```
+BOT_TOKEN=
+GROQ_API_KEY= 
+ADMIN_ID=
+TODOIST_API=
+TAVILY_API_KEY=
+ELEVENLABS_API_KEY=
+WOLFRAM_ALPHA_SIMPLE_API_KEY=
+```
+And fill in the api keys.\
+Then you run bot.py.
+
+*This is a temporary instruction. I'll work on it when I finish working on the bot.*
+
 ### Todo:
 
 - [ ] Submit chatbot assistant 'complete history of the diologue'
@@ -43,4 +60,4 @@ Create a telegram bot with artificial intelligence that will use google calendar
 - [ ] Working with pictures ([SimpleTex](https://simpletex.cn/), [OrcSpace](https://ocr.space/ocrapi), [NinjaApi](https://api-ninjas.com/api/imagetotext), [phi3 vision](https://huggingface.co/microsoft/Phi-3-vision-128k-instruct))
 - [ ] Allow llm to read the mail
 - [ ] [langchain](https://python.langchain.com/v0.2/docs/tutorials/agents/)?
-- [ ] Enable other users (without google calendar, but still). Or create another bot based on this one
+- [ ] Enable other users (without google calendar, but still)
