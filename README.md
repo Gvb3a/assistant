@@ -27,12 +27,16 @@ ADMIN_ID=
 TODOIST_API=
 TAVILY_API_KEY=
 ELEVENLABS_API_KEY=
-WOLFRAM_ALPHA_SIMPLE_API_KEY=
+WOLFRAM_SIMPLE_API_KEY=
+WOLFRAM_SHOW_STEPS_RESULT=
 ```
 And fill in the api keys.\
 Then you run bot.py.
 
 *This is a temporary instruction. I'll work on it when I finish working on the bot.*
+
+### Possibilities:
+*TODO*
 
 ### Todo:
 
@@ -48,7 +52,7 @@ Then you run bot.py.
 - [ ] [ElevenLabs](https://elevenlabs.io/api) setting
 - [ ] Local TTS
 - [X] Add short [WolframAlpha](https://www.wolframalpha.com/) answer
-- [ ] Add full WolframAlpha answer (with step by step solution and photos)
+- [X] Add full WolframAlpha answer (with step by step solution and photos)
 - [ ] [Character.ai](https://character.ai/). Add a mode to communicate with the characters or use as llm. stickers.
 - [ ] Make a local calendar/todolist. I want to make it so that it would be possible to run everything locally
 - [ ] Add an option to communicate not via telegram ([LiveWhisper](https://github.com/Nikorasu/LiveWhisper)).
@@ -61,3 +65,6 @@ Then you run bot.py.
 - [ ] Allow llm to read the mail
 - [ ] [langchain](https://python.langchain.com/v0.2/docs/tutorials/agents/)?
 - [ ] Enable other users (without google calendar, but still)
+- [ ] If I'm going to do other people's access, I need to catch error.
+- [ ] Add a temporary message. It may display additional information.
+- [ ] For Tavily, add a promt transformation
