@@ -6,7 +6,7 @@ from api import (llm_api, vector_datebase_incert, vector_datebase_search, calend
                  todoist_new_task, todoist_get_tasks, todoist_close_task, tavily_full_search, tavily_qsearch,
                  ask_wolfram_alpha)
 from sql import sql_select, sql_incert, sql_delete_last
-from config import guiding_prompt, prompt_for_close_task, prompt_for_add, prompt_for_transform_query
+from config import guiding_prompt, prompt_for_close_task, prompt_for_add, prompt_for_transform_query_wolfram, prompt_for_transform_query_tavily
 
 
 init()
@@ -65,13 +65,19 @@ async def llm_answer(user_message: str) -> tuple[str, list]:
     print(f'llm_answer. responce direction: {response_direction}')
 
     if response_direction is not None:
-        long_system_message = False  # If the system message is very large, I will remove two messages to simplify the llm
+        long_system_message = False  # If the system message is very large, I will remove three messages to simplify the llm
         # query transformation. For example wolfram alpha will not understand Use wolfram alpha and solve 3x-1=11, so we make llm transform the query
-        if response_direction == 'wolfram alpha':
+        start = datetime.now()
+        if response_direction in ['wolfram alpha', 'quick search internet', 'deep search internet']:
+            
+            if response_direction == 'wolfram alpha':
+                transformed_promt = prompt_for_transform_query_wolfram
+            else:
+                transformed_promt = prompt_for_transform_query_tavily
 
             transformed_messages = [{
                 'role': 'system',
-                'content': prompt_for_transform_query
+                'content': transformed_promt
             },
             {
                 'role': 'user',
@@ -108,7 +114,7 @@ async def llm_answer(user_message: str) -> tuple[str, list]:
         
         elif response_direction  == 'quick search internet':
             
-            answer, images = await tavily_qsearch(text=user_message)
+            answer, images = await tavily_qsearch(text=transformed_query)
 
             system_message = f'Internet search short results: {answer}\nThe images (wolfram alpha and step by step answer page) will be attached to your reply. The answer should be no more than 1000 characters'
 
@@ -116,7 +122,7 @@ async def llm_answer(user_message: str) -> tuple[str, list]:
 
             long_system_message = True
             
-            answer = tavily_full_search(text=user_message)
+            answer, images = await tavily_full_search(text=transformed_query)
 
             system_message = f'Internet search raw content: {answer}'
 
@@ -136,12 +142,12 @@ async def llm_answer(user_message: str) -> tuple[str, list]:
             print(f'{Fore.GREEN}llm_answer{Style.RESET_ALL}(regenarate): {str(response)}')
             return response, images
 
-            
+        print(datetime.now()-start)
         messages.append({'role': 'system', 'content': system_message})
         sql_incert('system', system_message)
 
         if long_system_message:
-            messages = messages[2:]
+            messages = messages[3:]
 
     else:
         system_message = None

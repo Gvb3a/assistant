@@ -122,12 +122,12 @@ async def command_regenerate(message: Message) -> None:
 
 @dp.message()
 async def message_handler(message: Message) -> None:
-
     chat_id = message.chat.id
     user = message.from_user.full_name
     username = message.from_user.username
     message_id = message.message_id
 
+    print(f'Start message by {user}')
 
     if message.voice:
         
@@ -141,11 +141,23 @@ async def message_handler(message: Message) -> None:
     else:
         text = message.text 
 
-    answer, images = await llm_answer(text)
-    
+    try:
+        answer, images = await llm_answer(text)
+    except Exception as e:
+        print(e)
+        answer, images = 'Error. Try again later or contact admin', []
+
     try:
         if images == []:
-            await message.answer(answer, parse_mode='Markdown')
+
+            if len(answer) > 4000:  # llama 3.1 может ломаться и писать чушь
+                inline_button = InlineKeyboardButton(text='Regenerate', callback_data='regenerate')
+                inline_keyboard = InlineKeyboardMarkup(inline_keyboard=[[inline_button]])
+                answer = answer[:4000]
+                await message.answer(answer, reply_markup=inline_keyboard)
+
+            else:
+                await message.answer(answer, parse_mode='Markdown')
         else:
             caption = answer[:1000]
             media = [InputMediaPhoto(media=FSInputFile(path=images[0]), 
@@ -159,6 +171,7 @@ async def message_handler(message: Message) -> None:
 
     except Exception as e:
         print(e)
+        answer = answer[:4000]
         await message.answer(answer)
 
     

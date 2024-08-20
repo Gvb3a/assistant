@@ -514,7 +514,7 @@ async def ask_wolfram_alpha(text: str) -> tuple[str, str, list]:
 # Tavily. https://tavily.com/
 async def tavily_qsearch(text: str):
     '''Asynchronous function. Returns a short answer on the topic using the internet and photos. (include_answer=True, max_results=0)'''
-    response = tavily_client.search(query=text, search_depth='advanced', include_answer=True, include_images=True, max_results=0)
+    response = tavily_client.search(query=text, search_depth='basic', include_answer=True, include_images=True, max_results=0)
     answer = response['answer']
     images_url = response['images']
     nw = datetime.now().strftime('%Y%m%d_%H%M%S%f')
@@ -524,9 +524,15 @@ async def tavily_qsearch(text: str):
     return answer, images
 
 
-def tavily_full_search(text: str, max_results: int = 2):
-    '''Returns text from multiple pages on a web request (include_raw_content=True)'''
-    response = tavily_client.search(query=text, search_depth='basic', include_raw_content=True, max_results=max_results)
+async def tavily_full_search(text: str, max_results: int = 2):
+    '''Asynchronous function. Returns text from multiple pages on a web request (include_raw_content=True) and photos'''
+    response = tavily_client.search(query=text, search_depth='advanced', include_raw_content=True, include_images=True, max_results=max_results)
     results = response['results']
-    print_colorama(results)
-    return results
+    images_url = response['images']
+    nw = datetime.now().strftime('%Y%m%d_%H%M%S%f')
+    downloaded_images = await asyncio.gather(*[download_image_async(url, f'tavily_qsearch-{nw}-{i}.png') for i, url in enumerate(images_url)])
+    images = [image for image in downloaded_images if image]
+    print_colorama(f'{results}, {images}')
+
+    return results, images
+

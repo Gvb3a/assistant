@@ -19,8 +19,8 @@ guiding_prompt = f"""You are the chatbot's assistant. Your task is to write a nu
 3 - If the chatbot requires Google calendar and/or Todoist for the next week/tomorrow to respond. Examples: What's my plan for this week; What about tomorrow?
 4 - If the request means that ChatBot will add an event/task to Google Calendar/Todois. Examples: Add a new event for today from 12:00 to 13:30; Add a new task(reminder): change the aquarium at 6:00 p.m.
 5 - If the request means that ChatBot marks the task complete. Examples: Mark the task completed Go to the gym.
-6 - If the answer require internet access to reply. ChatBot will receive a short reply with up-to-date information. Examples: What is the current status of Elon Mask, Find the pictures of Tolkien, Search the internet: who won the Paris Olympics.
-7 - If the answer require full text from the Internet (for example, the entire lyrics of a song). Examples: lyrics of Bohemian Rhapsody; Find the translation of the song She loves You; Find the text from the langchain documentation about agent
+6 - If the answer require internet access to reply. ChatBot will receive a short reply with up-to-date information. Examples: What is the current status of Elon Mask, Find the pictures of Tolkien, Search the internet: who won the Paris Olympics; Do a quick search: steve jobs 
+7 - If the answer require full text from the Internet (for example, the entire lyrics of a song). Examples: lyrics of Bohemian Rhapsody; Do an in-depth search and find information about langchain.
 8 - If the answer requires a wolfram alpha (calculate something, show solution). Examples: How much is (4878^56)/912; frac(56!)(4!*6!); Solution Answer 3x^2-7x+4=0; Solve the equation 5x^2-6x+3=0 step by step; Plot 3x=1
 9 - User asks to regenerate message. Examples: Regenerate. You wrote rubbish
 
@@ -75,7 +75,7 @@ Now, respond to the query by following the rules
 """
 
 
-prompt_for_transform_query = """You have to turn a user query into a query that wolfram alpha will understand (If the enquiry is normal, leave it that way).
+prompt_for_transform_query_wolfram = """You have to turn a user query into a query that wolfram alpha will understand (If the enquiry is normal, leave it that way).
 
 Examples:
 
@@ -91,22 +91,55 @@ Examples:
 4. User: Slve 2x^2=16
    You: Solve 2x^2=16
 
-5. User: (567^34)/435-6758
+5. User: Help me and do the math (567^34)/435-6758
    You: (567^34)/435-6758
 
 6. User: Sum of roots 8x^3-4x^2+11x-36=0
    You: Sum of roots 8x^3-4x^2+11x-36=0
 
-Также wolfram alpha принимает только английский язык
+7. User: Use wolfram alpha to find the population of France
+   You: France population
 
-7. User: x в кубе равно 8
+
+Also wolfram alpha only accepts the English language
+
+8. User: x в кубе равно 8
    You: x^3=8
 
-8. User: 14x meno 5 uguale 0
+9. User: 14x meno 5 uguale 0
    You: 14x-5=0
 
-9. User: Calculer 456^45
+10. User: Calculer 456^45
    You: Calculate 456^45
+
+
+Now, respond to the query by following the rules
+"""
+prompt_for_transform_query_tavily = """
+You need to turn a user's query into a more web searchable query (tavily). Your answer will go as an enquiry
+
+1. User: Use the internet to find the exact population of France
+   You: Population of France
+
+2. User: Find pictures of Tolkien
+   You: Pictures of Tolkien
+
+3. User: Find lyrics to the song We didnt start the fire
+   You: Tolkien photos
+
+4. User: Do a deep search and find which languages llama 3.1 supports.
+   You: Which languages llama 3.1 supports
+
+5. User: Do a quick search: steve jobs 
+   You: steve jobs
+
+The user can ask for an English translation to the enquiry
+
+6. User: Поищи на англиском бесплатные api для llm
+   You: Free api for llm
+
+7. User: Trouvez une recette de crêpes anglaises sur l'internet. 
+   You: Pancake recipe 
 
 Now, respond to the query by following the rules
 """

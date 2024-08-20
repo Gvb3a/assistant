@@ -42,7 +42,6 @@ Then you run bot.py.
 
 - [ ] Submit chatbot assistant 'complete history of the diologue'
 - [ ] Add a restriction on users and bot information
-- [ ] В llm_answer сокращать историю при большом system message
 - [X] Regenerete message (llama 3.1 70b often gives nonsense)
 - [ ] Hosting version (online services only)
 - [ ] Add a reminder(todoist)
@@ -59,7 +58,7 @@ Then you run bot.py.
 - [ ] Add online vector bd. Solve the problem of setting it up  
 - [ ] Add llm ability to change settings
 - [X] Add tavily
-- [X] Add **deep** search using tavily
+- [X] Add deep search using tavily
 - [ ] Add image generation
 - [ ] Working with pictures ([SimpleTex](https://simpletex.cn/), [OrcSpace](https://ocr.space/ocrapi), [NinjaApi](https://api-ninjas.com/api/imagetotext), [phi3 vision](https://huggingface.co/microsoft/Phi-3-vision-128k-instruct))
 - [ ] Allow llm to read the mail
@@ -67,4 +66,5 @@ Then you run bot.py.
 - [ ] Enable other users (without google calendar, but still)
 - [ ] If I'm going to do other people's access, I need to catch error.
 - [ ] Add a temporary message. It may display additional information.
-- [ ] For Tavily, add a promt transformation
+- [X] For Tavily, add a promt transformation
+- [ ] Split llm_answer into 4-3 functions. You can output the information in a temporary message
