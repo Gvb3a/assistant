@@ -62,9 +62,12 @@ Then you run bot.py.
 - [ ] Add image generation
 - [ ] Working with pictures ([SimpleTex](https://simpletex.cn/), [OrcSpace](https://ocr.space/ocrapi), [NinjaApi](https://api-ninjas.com/api/imagetotext), [phi3 vision](https://huggingface.co/microsoft/Phi-3-vision-128k-instruct))
 - [ ] Allow llm to read the mail
-- [ ] [langchain](https://python.langchain.com/v0.2/docs/tutorials/agents/)?
+- [X] [langchain](https://python.langchain.com/v0.2/docs/tutorials/agents/)?
+- [ ] Make a customization: use langchain ot not
 - [ ] Enable other users (without google calendar, but still)
 - [ ] If I'm going to do other people's access, I need to catch error.
 - [ ] Add a temporary message. It may display additional information.
 - [X] For Tavily, add a promt transformation
 - [ ] Split llm_answer into 4-3 functions. You can output the information in a temporary message
+- [ ] Add the ability to make multiple posts in Wolfram (separator - ;). Asynchronously
+- [ ] Add [Code Interpreting](https://e2b.dev/P)

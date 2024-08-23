@@ -160,3 +160,40 @@ async def llm_answer(user_message: str) -> tuple[str, list]:
     sql_incert('assistant', response)
 
     return response, images
+
+
+def langchain_answer(text):
+    # langchain-community langgraph langchain-anthropic langgraph-checkpoint-sqlite langchain_groq wikipedia wolframalpha tavily-python nest-asyncio
+    import nest_asyncio  # for wolfram alpha
+    nest_asyncio.apply()
+
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    os.environ["GROQ_API_KEY"] = os.getenv('GROQ_API_KEY')
+    os.environ["TAVILY_API_KEY"] = os.getenv('TAVILY_API_KEY')
+    os.environ["WOLFRAM_ALPHA_APPID"] = os.getenv('WOLFRAM_SIMPLE_API_KEY')
+    # os.environ["LANGSMITH_API_KEY"] = 'LANGSMITH_API_KEY'
+    # os.environ["LANGSMITH_TRACING"] = 'true'
+
+    from langchain.agents import load_tools
+    from langchain.agents import initialize_agent
+
+    from langchain_groq import ChatGroq
+    llm = ChatGroq(model="llama-3.1-70b-versatile")
+
+    from langchain_community.tools import TavilySearchResults, TavilyAnswer
+    from langchain_community.utilities.wolfram_alpha import WolframAlphaAPIWrapper
+
+    tavily_search_results = TavilySearchResults(include_raw_content=True)
+    tavily_answer = TavilyAnswer()
+
+    tools = load_tools(['wikipedia', 'wolfram-alpha'], llm=llm) + [tavily_search_results, tavily_answer]
+
+    agent = initialize_agent(llm=llm, tools=tools, verbose=True)
+
+    result = agent.run(text)
+
+    return result
