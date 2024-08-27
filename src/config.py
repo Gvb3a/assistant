@@ -1,41 +1,80 @@
+global_settings = {
+   'local_llm': 0,
+   'local_whisper': 0,
+   'local_whisper_model': 'base',
+   'llm_model': 'llama-3.1-70b-versatile',
+   'fast_llm_model': 'llama-3.1-8b-instant',
+   'local_llm_model': 'llama3.1',
+   'fast_local_llm_model': 'phi3'
+}
 
-# When creating the database, the values will be taken from here. This is done to make it convenient to change values
-db_defult_settings = [  
-   {'name': 'number of gmail accounts', 'value': 3},
-   {'name': 'local whisper', 'value': 0}, # If 1, whisper(speech recognition) is used locally, otherwise(0) via the Groq API.
-   {'name': 'local llm', 'value': 0},  # 0 - groqcloud, 1 - ollama
-   {'name': 'local tts', 'value': 0},  # 0 - elevenlabs, 1 - https://github.com/coqui-ai/TTS 
-   {'name': 'tts enabled', 'value': 1} 
-]  # TODO: vector db. Problem with circular import when changing a value
+system_prompt = """You are a helpful assistant with access to various services (WolframAlpha, tavily, todoist and more). Access to services is provided in the following way: after the user's request, if needed from the system, there will be a message. Provide this information only when it is relevant to the conversation. Always prioritise honesty and transparency in yous."""
 
 
-system_prompt = """You are a helpful assistant with access to various services (google calendar, todoist), but mostly you just chat in Telegram. You communicate with Boris, the developer who created you.  Access to services is provided in the following way: after the user's request, if needed from the system, there will be a message. Provide this information only when it is relevant to the conversation. Always prioritise honesty and transparency in yous."""
-n = 9
-guiding_prompt = f"""You are the chatbot's assistant. Your task is to write a number between 0 and {n} based on the following conditions:
 
-0 - If the query is for casual conversation (just chatting. Will mostly ask other items directly). Examples: How's it going; Remember, my favourite book is Lord of the Rings; The internet is so cool
-1 - If the answer requires accessing a vector database (when the user asks some fact about himself). Examples: What's my favourite book
-2 - If the chatbot requires Google calendar and/or Todoist for this day (or no time) to respond. Examples: What I've got today; What I need to do
-3 - If the chatbot requires Google calendar and/or Todoist for the next week/tomorrow to respond. Examples: What's my plan for this week; What about tomorrow?
-4 - If the request means that ChatBot will add an event/task to Google Calendar/Todois. Examples: Add a new event for today from 12:00 to 13:30; Add a new task(reminder): change the aquarium at 6:00 p.m.
-5 - If the request means that ChatBot marks the task complete. Examples: Mark the task completed Go to the gym.
-6 - If the answer require internet access to reply. ChatBot will receive a short reply with up-to-date information. Examples: What is the current status of Elon Mask, Find the pictures of Tolkien, Search the internet: who won the Paris Olympics; Do a quick search: steve jobs 
-7 - If the answer require full text from the Internet (for example, the entire lyrics of a song). Examples: lyrics of Bohemian Rhapsody; Do an in-depth search and find information about langchain.
-8 - If the answer requires a wolfram alpha (calculate something, show solution). Examples: How much is (4878^56)/912; frac(56!)(4!*6!); Solution Answer 3x^2-7x+4=0; Solve the equation 5x^2-6x+3=0 step by step; Plot 3x=1
-9 - User asks to regenerate message. Examples: Regenerate. You wrote rubbish
+serivices = {
+   'none': {
+       'description': 'If the query does not require any external services (just chatting or when the model itself can answer the query). ',
+       'need_transform_query': False
+   },
+   'wolfram_alpha': {
+       'description': 'If the answer requires a wolfram alpha (calculate something, show solution, use wolfram etc).',
+       'need_transform_query': True
+   },
+   'vector_db': {
+       'description': 'If the query requires accessing personal information stored in a vector database.',
+       'need_transform_query': False
+   },
+   'calendar_and_todoist': {
+       'description': 'If the query requires checking the user\'s Google Calendar or Todoist.',
+       'need_transform_query': False
+   },
+   'edit_calendar_or_todoist': {
+       'description': 'If the request is for changes to Google Calendar or Todoist (adding new tasks, events, reminder or marks the task complete).',
+       'need_transform_query': False
+   },
+   'tavily_answer': {
+       'description': 'If the response requires Internet access.',
+       'need_transform_query': True
+   },
+   'tavily_full_answer': {
+       'description': 'If the answer require full text from the Internet (for example, the entire lyrics of a song or is it better to give the bot all the information).',
+       'need_transform_query': True
+   },
+   'regenerate': {
+       'description': 'User asks to regenerate message.',
+       'need_transform_query': False
+   }
+}
+guiding_prompt_start = 'You are the chatbot\'s assistant. You have to choose the tool that the chatbot will use. Tools:\n\n'
 
-The user can also directly say what to use. For example, use wolfram alpha short answer to ...
-Your reply must consist solely of a single digit (0-{n}) based on the conditions above. Do not provide any explanations or additional text."""
+guiding_prompt_tools = ''
 
-prompt_for_add = """Based on the user's request and the instructions, you will have to call the function and substitute the values. Output only the function without any quotation marks (as in the examples)
+for items in serivices.items():
+    guiding_prompt_tools += f'{items[0]} - {items[1]["description"]}\n'
 
-calendar_add_event(summary:str, start: datetime, duration_in_hours: int = 24) - add a new event to Google calendar.
+guiding_prompt_end = f"""\nAnswer in the following format:
+
+Thought: you should always think about what to do
+Action: the action to take, should be one of {', '.join([i for i in serivices.keys()])}
+Action Input: if you need to convert the request for an action ({', '.join([item[0] for item in serivices.items() if item[1]['need_transform_query']])}). For example, Wolfram Alpha will not understand Hi, help me with a solution ... or a query in a non-English language. And for tavily, it helps to give more relevant answers. If the action does not require Action Input, write None. 
+
+You'll be given a message history"""
+
+guiding_prompt = guiding_prompt_start + guiding_prompt_tools + guiding_prompt_end
+
+
+
+prompt_for_edit_calendar_todoist = """Based on the user's request and the instructions, you will have to call the function and substitute the values. Output only the function without any quotation marks (as in the examples)
+
+calendar_add_event(summary: str, start: datetime, duration_in_hours: int = 24) - add a new event to Google calendar.
 To add an event for the whole day, you need to specify the name, duration_in_hours multiple of 24 (24, 48, etc) and start as datetime({year}, {month}, {day}, 0, 0).
 To add an event for a specific time, you need to specify the name, start as datetime({year}, {month}, {day}, {hour}, {minutes}) and duduration_in_hours (can be a fractional number).
 
 todoist_new_task(content: str, due_string: str = None) - adds a new task to Todoist.
 Mandatory content (task name). due_string (optional) - time of task execution. Passed in simple form, for example: tommorow, today at 16:00, every Monday, 18:30, next week, 3 Aug).
 
+todoist_close_task(task_id) - marks the task as completed in Todoist. You will be given a list of all the id's
 
 Examples:
 
@@ -57,18 +96,10 @@ Examples:
 7. User: Add global task: parse notes (now 2024-08-11 16:14)
    You: todoist_new_task('Parse notes')
 
-Now, respond to the query by following the rules
-"""
-
-prompt_for_close_task = """Based on the instructions, you should call the function and substitute values. Print only the function without inverted commas (as in the examples)
-The todoist_close_task(task_id) function receives a task id as input and marks it as completed. In the user message you will get all the id's.
-
-Examples:
-
-1. user: Mark the task Go to the gym as completed (['Go to the gym, date: 1 Aug, id: 8354485533', 'Unclutter the wardrobe, date: 2 Aug, id: 8257183536']).
+8. User: Mark the task Go to the gym as completed (['Go to the gym, date: 1 Aug, id: 8354485533', 'Unclutter the wardrobe, date: 2 Aug, id: 8257183536']).
    You: todoist_close_task(8354485533)
 
-2. User: Mark brushing teeth for today as done (['Go to gym, date: None, id: 8257183536', 'Brush teeth, date: every day, id: 8259445526']))
+9. User: Mark brushing teeth for today as done (['Go to gym, date: None, id: 8257183536', 'Brush teeth, date: every day, id: 8259445526']))
    You: todoist_close_task(8259445526)
 
 Now, respond to the query by following the rules
@@ -112,34 +143,6 @@ Also wolfram alpha only accepts the English language
 10. User: Calculer 456^45
    You: Calculate 456^45
 
-
-Now, respond to the query by following the rules
-"""
-prompt_for_transform_query_tavily = """
-You need to turn a user's query into a more web searchable query (tavily). Your answer will go as an enquiry
-
-1. User: Use the internet to find the exact population of France
-   You: Population of France
-
-2. User: Find pictures of Tolkien
-   You: Pictures of Tolkien
-
-3. User: Find lyrics to the song We didnt start the fire
-   You: Tolkien photos
-
-4. User: Do a deep search and find which languages llama 3.1 supports.
-   You: Which languages llama 3.1 supports
-
-5. User: Do a quick search: steve jobs 
-   You: steve jobs
-
-The user can ask for an English translation to the enquiry
-
-6. User: Поищи на англиском бесплатные api для llm
-   You: Free api for llm
-
-7. User: Trouvez une recette de crêpes anglaises sur l'internet. 
-   You: Pancake recipe 
 
 Now, respond to the query by following the rules
 """

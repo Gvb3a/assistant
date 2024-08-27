@@ -40,34 +40,31 @@ Then you run bot.py.
 
 ### Todo:
 
-- [ ] Submit chatbot assistant 'complete history of the diologue'
+- [ ] Local llm wia hugging face
 - [ ] Add a restriction on users and bot information
 - [X] Regenerete message (llama 3.1 70b often gives nonsense)
 - [ ] Hosting version (online services only)
 - [ ] Add a reminder(todoist)
 - [ ] Add a timer
 - [ ] Let the first one start the diologue
-- [x] Add ElevenLabs
-- [ ] [ElevenLabs](https://elevenlabs.io/api) setting
-- [ ] Local TTS
-- [X] Add short [WolframAlpha](https://www.wolframalpha.com/) answer
-- [X] Add full WolframAlpha answer (with step by step solution and photos)
+- [X] Add full [WolframAlpha](https://www.wolframalpha.com/) answer (photos)
 - [ ] [Character.ai](https://character.ai/). Add a mode to communicate with the characters or use as llm. stickers.
 - [ ] Make a local calendar/todolist. I want to make it so that it would be possible to run everything locally
 - [ ] Add an option to communicate not via telegram ([LiveWhisper](https://github.com/Nikorasu/LiveWhisper)).
-- [ ] Add online vector bd. Solve the problem of setting it up  
-- [ ] Add llm ability to change settings
+- [ ] Add the ability to work with documents (vector datebase)
+- [ ] Add online vector bd. Solve the problem of setting it up
 - [X] Add tavily
 - [X] Add deep search using tavily
 - [ ] Add image generation
-- [ ] Working with pictures ([SimpleTex](https://simpletex.cn/), [OrcSpace](https://ocr.space/ocrapi), [NinjaApi](https://api-ninjas.com/api/imagetotext), [phi3 vision](https://huggingface.co/microsoft/Phi-3-vision-128k-instruct))
+- [ ] Working with pictures ([SimpleTex](https://simpletex.cn/), [OrcSpace](https://ocr.space/ocrapi), [NinjaApi](https://api-ninjas.com/api/imagetotext), [phi3 vision](https://huggingface.co/microsoft/Phi-3-vision-128k-instruct)). Maybe in google colab place the model and make an api
 - [ ] Allow llm to read the mail
 - [X] [langchain](https://python.langchain.com/v0.2/docs/tutorials/agents/)?
 - [ ] Make a customization: use langchain ot not
 - [ ] Enable other users (without google calendar, but still)
 - [ ] If I'm going to do other people's access, I need to catch error.
 - [ ] Add a temporary message. It may display additional information.
-- [X] For Tavily, add a promt transformation
-- [ ] Split llm_answer into 4-3 functions. You can output the information in a temporary message
+- [x] Split llm_answer into 4-3 functions. You can output the information in a temporary message
 - [ ] Add the ability to make multiple posts in Wolfram (separator - ;). Asynchronously
 - [ ] Add [Code Interpreting](https://e2b.dev/P)
+- [ ] Rebuild a complete vector datebase
+- [ ] Figure out the timeline for the calendar, add visualizations, and see how to give access to other users

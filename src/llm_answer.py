@@ -1,165 +1,181 @@
 from datetime import datetime
 from colorama import Fore, init, Style
 import asyncio
+from inspect import stack
 
-from api import (llm_api, vector_datebase_incert, vector_datebase_search, calendar_add_event, calendar_get_events, 
+from api import (llm_api, calendar_add_event, calendar_get_events, 
                  todoist_new_task, todoist_get_tasks, todoist_close_task, tavily_full_search, tavily_qsearch,
                  ask_wolfram_alpha)
-from sql import sql_select, sql_incert, sql_delete_last
-from config import guiding_prompt, prompt_for_close_task, prompt_for_add, prompt_for_transform_query_wolfram, prompt_for_transform_query_tavily
+from sql import sql_select_history, sql_incert_history
+from config import serivices, guiding_prompt, prompt_for_edit_calendar_todoist
 
 
 init()
 
 
-def llm_regenerate() -> tuple[str, list]:
+def print_colorama(text: str | None = None, color: str = 'green'):
+    colors = {'green': Fore.GREEN, 'red': Fore.RED, 'yellow': Fore.YELLOW}
     
-    sql_delete_last()
+    func = stack()[1].function
 
-    role, content, time = sql_select(n=5)
+    color = colors.get(color, Fore.GREEN)
+
+    print(f'{color}{func}{Style.RESET_ALL}: {str(text)}')
+
+
+def llm_regenerate(id: int) -> tuple[str, list]:
+    
+    # sql_delete_last()
+
+    user_name, user_id, message_id, role, content, time, addition = sql_select_history(id=id, n=5)
 
     messages = []
     for i in range(len(role)):
         messages.append({'role': role[i], 'content': content[i]})
 
     answer = llm_api(messages=messages)
-    print('llm regeretare answer', answer)
-    sql_incert('assistant', answer)
+    # sql_incert('Messages', answer)
 
+    print_colorama(f'id: {id}, answer: {answer}')
     return answer, []
 
 
-async def llm_answer(user_message: str) -> tuple[str, list]:
-    '''The basic command for llm. This is where the check (what to use), the associated calculation (e.g. wolfram alpha) and the answer itself take place. 
+def llm_select_tool(user_message: str, id) -> tuple[str, str]:
+    'The beginning of the response chain. Returns action (tool) and action input (for some tools)'
+    user_name, user_id, message_id, role, content, time, addition = sql_select_history(id=id, n=2)
     
-    I had to make it asynchronous because of ask_wolfram_alpha, which is asynchronous.'''
+    message_history_str = ''
+    for i in range(len(role)):
+        message_history_str += f'{role[i]}: {content[i]}\n'
+    message_history_str += f'user: {user_message}'
+    message_history = [{
+        'role': 'system',
+        'content': guiding_prompt
+    },
+    {
+        'role': 'user',
+        'content': message_history_str
+    }
+    ]
+    actions = serivices.keys()
+    
+    for _ in range(3):
+        answer = llm_api(message_history)
+        try:
+            action_index = answer.index('Action:')+len('Action:')
+            action = answer[action_index:answer.index('\n', action_index+1)].strip().lower()
+            action_input_index = answer.index('Action Input:')+len('Action Input:')
+            action_input = answer[action_input_index:].strip().lower()
+            if action in actions:
+                print_colorama(f'action: {action}, action input: {action_input}')
+                return action, action_input
+            print(action, action_input)
+        except:
+            pass
+    
+    print_colorama(text=f'Failed to get a response. user_message: {user_message}',color='red')
+    return 'none', 'none'
 
-    sql_incert('user', user_message)  # save user_message to db
+
+async def llm_use_tool(user_message: str, action: str, action_input: str, id) -> tuple[str | None, list]:
+    '''Using tools. Returns result and images'''
+    result = None
+    images = []
 
     nw = datetime.now().strftime("%Y.%m.%d %H:%M:%S")
-    vector_datebase_incert(role='user', content=user_message)  # save user_message to vector db
+    
+    if action == 'none':
+        return result, images
 
-    role, content, time = sql_select(n=6)
+    if action == 'wolfram_alpha':
+        result, images = await ask_wolfram_alpha(action_input)
+
+    elif action == 'tavily_answer':
+        result, images = await tavily_qsearch(action_input)
+
+    elif action == 'tavily_full_answer':
+        result, images = await tavily_full_search(action_input)
+
+    elif action == 'vector_db':
+        result = 'Temporarily not available (tell the user that). The ability to work with documents will also be added soon'
+
+    elif action == 'calendar_and_todoist':
+        result = f'Now {nw}. Today Events in Google Calendar: {calendar_get_events(duration=3)}(you can only see events from today through the next three days)\nToday/no time tasks in Todoist: {todoist_get_tasks()}'
+        
+
+    elif action == 'edit_calendar_or_todoist':
+        user_name, user_id, message_id, role, content, time, addition = sql_select_history(id=id, n=2)
+
+        messages_str = ''
+        for i in range(len(role)):
+            messages_str += f'{role[i]}: {content[i]}\n'
+        messages_str += f'user: {user_message}'
+        messages = [{
+            'role': 'system',
+            'content': guiding_prompt
+        },
+        {
+            'role': 'user',
+            'content': messages_str
+        }
+        ]
+
+        for _ in range(3):
+            try:
+                result = eval(llm_api(messages, fast_model=True))
+                break
+            except Exception as e:
+                print_colorama(f'edit_calendar_or_todoist: {e}')
+                result = f'Error: {e}'
+
+    elif action  == 'regenerate':
+        result, images = llm_regenerate(id)
+
+
+    result = f'{action}: {result}'
+    if images:
+        result += f'\nPictures will be attached to your response'
+
+        if action == 'wolfram_alpha':
+            result += '(Wolfram Alpha answer page and step by step solutions if available)'
+        elif 'tavily' in action:
+            result += '(thematic pictures)'
+
+    return result, images
+
+
+def llm_answer(user_message: str, user_name: str, id: int, system_message: str | None = None) -> str:
+    
+    sql_incert_history(user_name=user_name, id=id, role='user', content=user_message)
+
+    if system_message:
+        sql_incert_history(user_name=user_name, id=id, role='system', content=system_message)
+
+    sql_user_name, user_id, message_id, role, content, time, addition = sql_select_history(id=id, n=4)
 
     messages = []
     for i in range(len(role)):
         messages.append({'role': role[i], 'content': content[i]})
-    images = []  # internet search and wolfram alpha returns pictures
-
-
-    response_directions = [None, 'Memory', 'Calendar/Todoist for day', 'Calendar/Todoist for week', 'add event/task', 
-                           'close task', 'quick search internet', 'deep search internet', 'wolfram alpha', 'regenerate']
-    guiding_messages = [{"role": "system", "content": guiding_prompt},
-                        {"role": "user", "content": user_message}]  # TODO: full history
-    for _ in range(3):
-        
-        try:
-            guiding_responce = llm_api(guiding_messages)
-            response_direction = response_directions[int(guiding_responce)] # type: ignore
-            break
-        except:
-            pass
-    else:
-        response_direction = None
-
-    print(f'llm_answer. responce direction: {response_direction}')
-
-    if response_direction is not None:
-        long_system_message = False  # If the system message is very large, I will remove three messages to simplify the llm
-        # query transformation. For example wolfram alpha will not understand Use wolfram alpha and solve 3x-1=11, so we make llm transform the query
-        start = datetime.now()
-        if response_direction in ['wolfram alpha', 'quick search internet', 'deep search internet']:
-            
-            if response_direction == 'wolfram alpha':
-                transformed_promt = prompt_for_transform_query_wolfram
-            else:
-                transformed_promt = prompt_for_transform_query_tavily
-
-            transformed_messages = [{
-                'role': 'system',
-                'content': transformed_promt
-            },
-            {
-                'role': 'user',
-                'content': user_message
-            }]
-            transformed_query = llm_api(messages=transformed_messages)
-            print(f'llm_answer. transformed_query={transformed_query}')
-
-
-
-        if response_direction == 'Memory':
-            memory_results = vector_datebase_search(user_message)
-            system_message = f'Vector database search results (may be useless): {memory_results}'
-
-        elif response_direction == 'Calendar/Todoist for day':
-            system_message = f'Now {nw}. Today Events in Google Calendar: {calendar_get_events()}\nToday/no time tasks in Todoist: {todoist_get_tasks()}'
-
-        elif response_direction == 'Calendar/Todoist for week':
-            system_message = f'Now {nw}. This week\'s events in Google Calendar: {calendar_get_events(duration=7)}\nThis week/no time tasks in Todoist: {todoist_get_tasks()}'
-
-        elif response_direction in ['add event/task', 'close task']:
-            
-            promt = prompt_for_add if response_direction == 'add event/task' else prompt_for_close_task
-            messages_promt = [{'role': 'system', 'content': promt},
-                                {'role': 'user', 'content': user_message}]
-            
-            for _ in range(3):
-                try:
-                    system_message = eval(llm_api(messages_promt))
-                    break
-                except Exception as e:
-                    print(f'{Fore.RED}llm_answer{Style.RESET_ALL}. {response_direction}: {e}')
-                    system_message = f'Error: {e}'
-        
-        elif response_direction  == 'quick search internet':
-            
-            answer, images = await tavily_qsearch(text=transformed_query)
-
-            system_message = f'Internet search short results: {answer}\nThe images (wolfram alpha and step by step answer page) will be attached to your reply. The answer should be no more than 1000 characters'
-
-        elif response_direction  == 'deep search internet':
-
-            long_system_message = True
-            
-            answer, images = await tavily_full_search(text=transformed_query)
-
-            system_message = f'Internet search raw content: {answer}'
-
-        elif response_direction  == 'wolfram alpha':
-            
-            long_system_message = True
-
-            wolfram_answer, step_by_step, images = await ask_wolfram_alpha(transformed_query)
-            system_message = f'''Wolfram alpha short answer: {wolfram_answer}. 
-                \nStep by step solutions (may be useless): {step_by_step}. 
-                \nWolframAlpha answer images will be attached to your response.  
-                The answer should be no more than 1000 characters'''
-
-        elif response_direction  == 'regenerate':
-            sql_delete_last()
-            response, images = llm_regenerate()
-            print(f'{Fore.GREEN}llm_answer{Style.RESET_ALL}(regenarate): {str(response)}')
-            return response, images
-
-        print(datetime.now()-start)
-        messages.append({'role': 'system', 'content': system_message})
-        sql_incert('system', system_message)
-
-        if long_system_message:
-            messages = messages[3:]
-
-    else:
-        system_message = None
-
-
-
+    print(messages)
     response = llm_api(messages=messages)
-    
-    print(f'{Fore.GREEN}llm_answer{Style.RESET_ALL}. response_direction: {response_direction}, system_message: {system_message}, response: {response}')
-    sql_incert('assistant', response)
+    print_colorama(response)
 
-    return response, images
+    sql_incert_history(user_name=user_name, id=id, role='assistant', content=response)
+    return response
+
+
+async def llm_full_answer(user_message: str, id: int, user_name: str) -> tuple[str, list]:
+    '''The function collects llm_select_tool, llm_use_tool, llm_answer'''
+
+    action, action_input = llm_select_tool(user_message=user_message, id=id)
+
+    system_message, images = await llm_use_tool(user_message=user_message, action=action, action_input=action_input, id=id)
+
+    result = llm_answer(user_message=user_message, user_name=user_name, id=id, system_message=system_message)
+    
+    return result, images
+
+
 
 
 def langchain_answer(text):

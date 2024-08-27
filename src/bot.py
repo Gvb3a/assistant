@@ -8,9 +8,8 @@ from colorama import Fore, Style, init
 from datetime import datetime
 from os import getenv, remove
 
-from api import mail, gmail_modify, speech_recognition, tts
-from sql import sql_setting_get
-from llm_answer import llm_answer, llm_regenerate
+from api import mail, gmail_modify, speech_recognition
+from llm_answer import llm_select_tool, llm_use_tool, llm_answer, llm_regenerate
     
 
 init()
@@ -21,7 +20,7 @@ bot_token = getenv('BOT_TOKEN')
 admin_id = getenv('ADMIN_ID')
 
 
-bot = Bot(token=bot_token)
+bot = Bot(token=str(bot_token))
 dp = Dispatcher()
 
 
@@ -41,7 +40,7 @@ def mail_message():
 async def download_file_for_id(file_id, extension):
 
     file = await bot.get_file(file_id)
-    file_path = file.file_path
+    file_path = str(file.file_path)
     now = datetime.now()
     file_name = f'{now.strftime("%Y%m%d_%H%M%S")}.{extension}'
 
@@ -53,8 +52,8 @@ async def download_file_for_id(file_id, extension):
 @dp.callback_query(F.data.startswith('mail_modify-'))
 async def callback_mail_modify(callback: CallbackQuery):
 
-    text = callback.message.text
-    data = callback.data.split('-')
+    text = str(callback.message.text)
+    data = str(callback.data).split('-')
     reply_markup = callback.message.reply_markup
     index = data[1]
     email_id = data[2]
@@ -109,9 +108,10 @@ async def command_mail(message: Message) -> None:
 @dp.message(Command('regenerate'))
 async def command_regenerate(message: Message) -> None:
     chat_id = message.chat.id
+    id = message.from_user.id
     message_id = message.message_id
 
-    answer, images = llm_regenerate()
+    answer, images = llm_regenerate(id=id)
 
     try:
         await message.answer(text=answer, parse_mode='Markdown')
@@ -124,33 +124,45 @@ async def command_regenerate(message: Message) -> None:
 async def message_handler(message: Message) -> None:
     chat_id = message.chat.id
     user = message.from_user.full_name
+    user_id =  message.from_user.id
     username = message.from_user.username
     message_id = message.message_id
 
-    print(f'Start message by {user}')
-
+    
     if message.voice:
-        
+        await message.reply('Start speech recognition')
         file_name = await download_file_for_id(file_id=message.voice.file_id, extension='mp3')
 
         text = speech_recognition(file_name=file_name).strip()
-
-        await message.reply(text)
         remove(file_name)
+        
+        temp_text = f'Recognized: {text}'
+        await bot.edit_message_text(chat_id=chat_id, message_id=message_id+1, text=temp_text)
 
     else:
-        text = message.text 
+        temp_text = ''
+        text = str(message.text)
+        await message.reply(temp_text + '\nSelecting a tool')
+    print(f'{text} by {user}')
 
     try:
-        answer, images = await llm_answer(text)
+        action, action_input = llm_select_tool(user_message=text, id=id)
+        if action != 'none':
+            temp_text = temp_text + f'\ntool: {action}'
+            await bot.edit_message_text(chat_id=chat_id, message_id=message_id+1, text=temp_text + ('' if action == 'none' else '\nUsing the tool') )
+            system_message, images = await llm_use_tool(user_message=text, action=action, action_input=action_input, id=id)
+        else:
+            system_message, images = None, []
+        await bot.edit_message_text(chat_id=chat_id, message_id=message_id+1, text=temp_text + '\nAsking the llm')
+        answer = llm_answer(user_message=text, user_name=user, id=user_id, system_message=system_message)
+        await bot.delete_message(chat_id=chat_id, message_id=message_id+1)
     except Exception as e:
-        print(e)
+        print(f'message_handler 1: {e}')
         answer, images = 'Error. Try again later or contact admin', []
 
     try:
         if images == []:
-
-            if len(answer) > 4000:  # llama 3.1 может ломаться и писать чушь
+            if len(answer) > 4000:  # TODO
                 inline_button = InlineKeyboardButton(text='Regenerate', callback_data='regenerate')
                 inline_keyboard = InlineKeyboardMarkup(inline_keyboard=[[inline_button]])
                 answer = answer[:4000]
@@ -170,15 +182,9 @@ async def message_handler(message: Message) -> None:
                 remove(image)
 
     except Exception as e:
-        print(e)
+        print(f'message_handler 2: {e}')
         answer = answer[:4000]
         await message.answer(answer)
-
-    
-    tts_enabled = sql_setting_get('tts enabled')
-    if tts_enabled:
-        file_name = tts(text=answer)
-        await message.answer_voice(FSInputFile(file_name))
 
 
 

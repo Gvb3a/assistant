@@ -1,103 +1,151 @@
 import sqlite3
 from datetime import datetime
+from typing import Literal
+from colorama import Fore, Style, init
 
-from config import db_defult_settings, system_prompt
+from config import global_settings, system_prompt
 
+init()
 
 def sql_launch():
     connection = sqlite3.connect('assistant.db') 
     cursor = connection.cursor()
     
+    # is used to store user and LLM messages to provide context for responses.
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS History (
+        CREATE TABLE IF NOT EXISTS Messages (
+        user_name TEXT,
+        user_id INT,
+        message_id INT,
         role TEXT,
         content TEXT,
-        time Text
+        time TEXT,
+        addition TEXT 
         )
         ''')
+    # user_name - user name in Telegram. It is not very convenient to look by id. user_id - individual for each telegram user id
+    # message_id will make it easier to control the history. Each user will have a message_id starting from 0 and increasing.
+    # role content time is used by LLMs
+    # addition. For example, what technology the user is using (langchain or standard).
+
+    # Users information. The llm will contain the current configuration. For example, whether the user uses the standard model (llm_answer), or any of the langchain models.
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS Settings (
-        name TEXT,
-        value INT
+        CREATE TABLE IF NOT EXISTS Users (
+        user_name TEXT,
+        telegram_username TEXT,
+        user_id INTEGER PRIMARY KEY,
+        llm TEXT,
+        number_of_messages INT,
+        first_message TEXT,
+        last_message TEXT
         )
         ''')
     
-    history_row = cursor.execute(f'SELECT * FROM History').fetchall()
-    if history_row == []:
-        cursor.execute("INSERT INTO History (role, content, time) VALUES (?, ?, ?)", ('system', system_prompt, datetime.now().strftime('%Y.%m.%d %H:%M:%S')))
+    # Global setting
+    cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS Settings (
+        local_llm INT,
+        local_whisper INT,
+        local_whisper_model TEXT,
+        llm_model TEXT,
+        fast_llm_model TEXT,
+        local_llm_model TEXT,
+        fast_local_llm_model TEXT
+        )
+        ''')
+    
+    setting_table = cursor.execute('SELECT * FROM Settings').fetchall()
+    if setting_table == []:
+        cursor.execute('INSERT INTO Settings (local_llm, local_whisper, local_whisper_model, llm_model, fast_llm_model, local_llm_model, fast_local_llm_model) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                       (global_settings['local_llm'], global_settings['local_whisper'], global_settings['local_whisper_model'], global_settings['llm_model'], 
+                        global_settings['fast_llm_model'], global_settings['local_llm_model'], global_settings['fast_local_llm_model']))
 
-    setting_row = cursor.execute(f'SELECT * FROM Settings').fetchall()
-    if setting_row == []:
-        print('Update Settings to db_defult_settings')
-        for setting in db_defult_settings:
-            cursor.execute("INSERT INTO Settings (name, value) VALUES (?, ?)", (setting['name'], setting['value']))
-
-    print(f'Database size: {len(history_row)}')
+    print(f'{Fore.GREEN}sql_launch{Style.RESET_ALL}')
 
     connection.commit()
     connection.close()
 
 
-def sql_select(n = 6):
+def sql_select_history(id: int, n: int | str = 5):
+    '''Returns user_name, user_id, message_id, role, content, time, addition. Requires id. n - number of messages is optional and by default n = 6, but if you specify *, the entire history will be retrieved'''
     connection = sqlite3.connect('assistant.db') 
     cursor = connection.cursor()
 
-    row = cursor.execute(f'SELECT * FROM History').fetchall()
-
+    row = cursor.execute(f'SELECT * FROM Messages WHERE user_id = "{id}"').fetchall()
+    
+    if row == []:
+        row = [['None', id, 0, 'system', system_prompt, datetime.now().strftime("%Y.%m.%d %H:%M:%S"), 'Standart']]
+        
     if n != '*':
         row = row[-n:]
 
-    role, content, time = [], [], []
-
-    for rows in row:
-        role.append(rows[0])
-        content.append(rows[1])
-        time.append(rows[2])
-
-
     connection.close()
+    
+    user_name, user_id, message_id, role, content, time, addition = map(list, zip(*row))
 
-    return role, content, time
+    return user_name, user_id, message_id, role, content, time, addition
 
 
-def sql_incert(role: str, content: str):
+def sql_select(var, table: Literal['Messages', 'Users', 'Settings'], where_var = None, where_value = None) -> list:
+    '''SELECT var FROM table WHERE where_var = where_value. Where_var and where_value are not necessary'''
     connection = sqlite3.connect('assistant.db')
     cursor = connection.cursor()
     
-    time = datetime.now()
-    cursor.execute("INSERT INTO History (role, content, time) VALUES (?, ?, ?)", (str(role), str(content), str(time)))
+    if where_var is None:
+        row = cursor.execute(f'SELECT {var} FROM {table}').fetchall()
+    else:
+        row = cursor.execute('SELECT ? FROM ? WHERE ? = ?', (var, table, where_var, where_value)).fetchall()
+
+    connection.close()
+
+    return row
+
+
+def sql_incert_history(user_name: str, id: int, role: str, content: str, addition: str = 'Standart') -> None:
+    connection = sqlite3.connect('assistant.db')
+    cursor = connection.cursor()
+
+    sql_user_name, sql_user_id, message_id, sql_role, sql_content, time, addition = sql_select_history(id=id, n=1)
+    values = (str(user_name), id, message_id[-1]+1, role, content, datetime.now().strftime("%Y.%m.%d %H:%M:%S"), 'Standart')
+    
+    cursor.execute("INSERT INTO Messages (user_name, user_id, message_id, role, content, time, addition) VALUES (?, ?, ?, ?, ?, ?, ?)", 
+                   values)
 
     connection.commit()
     connection.close()
 
 
-def sql_setting_get(name: str) -> int:
+
+def sql_incert(table: Literal['Messages', 'Users', 'Settings'], variables: tuple, values: tuple) -> None:
+    '''INSERT INTO table variables VALUES values'''
     connection = sqlite3.connect('assistant.db')
     cursor = connection.cursor()
     
-    result = cursor.execute(f"SELECT value FROM Settings WHERE name = '{name}'").fetchall()[0][0]
-
-    connection.commit()
-    connection.close()
-
-    return result
-
-
-def sql_setting_update(name: str, new_value: int) -> None:
-    connection = sqlite3.connect('assistant.db')
-    cursor = connection.cursor()
-    
-    cursor.execute("UPDATE Settings SET value = ? WHERE name = ?", (new_value, name))
+    cursor.execute("INSERT INTO ? ? VALUES ?", (table, variables, values))
 
     connection.commit()
     connection.close()
 
 
-def sql_delete_last():
+def sql_update(table: Literal['Messages', 'Users', 'Settings'], variable: str, values, where_var = None, where_value = None) -> None:
+    connection = sqlite3.connect('assistant.db')
+    cursor = connection.cursor()
+    
+    if where_var is None:
+        cursor.execute("UPDATE ? SET ? = ?", (table, variable, values))
+    else:
+        cursor.execute("UPDATE ? SET ? = ? WHERE ? = ?", (table, variable, values, where_var, where_value))
+
+    connection.commit()
+    connection.close()
+
+
+def sql_delete(table: Literal['Messages', 'Users', 'Settings'], where_var, where_value) -> None:
+    '''DELETE FROM table WHERE where_var = where_value'''
     connection = sqlite3.connect('assistant.db')
     cursor = connection.cursor()
 
-    cursor.execute("DELETE FROM History WHERE time = (SELECT MAX(time) FROM History)")
+    cursor.execute("DELETE FROM ? WHERE ? = ?", (table, where_var, where_value))  # TODO: add mult
 
     connection.commit()
     connection.close()

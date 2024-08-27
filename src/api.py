@@ -33,7 +33,8 @@ from tavily import TavilyClient  # Internet search
 from elevenlabs.client import ElevenLabs  # Online tts
 from elevenlabs import save
 
-from sql import sql_select, sql_setting_get
+from sql import sql_select, sql_incert
+from config import prompt_for_transform_query_wolfram
 
 init()  # that cmd would also have a different coloured output
 load_dotenv()  # load variables from the .env file
@@ -66,7 +67,7 @@ WOLFRAM_SHOW_STEPS_API = os.getenv('WOLFRAM_SHOW_STEPS_RESULT')
 
 
 CREDENTIALS_FILE = f'{path}\\client_secret.json'  # required for gmail and google calendar
-num_of_gmail_accounts = sql_setting_get('number of gmail accounts')
+num_of_gmail_accounts = 3
 TOKEN_FILES = [f'{path}\\token_{i}.json' for i in range(num_of_gmail_accounts)]
 
 
@@ -74,7 +75,7 @@ calendar = GoogleCalendar(credentials_path=CREDENTIALS_FILE)  #https://github.co
 
 
 
-def print_colorama(text: str = None, color: str = 'green'):
+def print_colorama(text: str | None = None, color: str = 'green'):
     '''When this function is called in another function, its green name is displayed (via stak) and then the text that is passed.
     Made to avoid writing {Fore.GREEN}{func name}{Style.RESET_ALL}: {text} all the time.'''
     colors = {'green': Fore.GREEN, 'red': Fore.RED, 'yellow': Fore.YELLOW}
@@ -86,22 +87,28 @@ def print_colorama(text: str = None, color: str = 'green'):
     print(f'{color}{func}{Style.RESET_ALL}: {str(text)}')
 
 
-def llm_api(messages: list, model: str = None, fast_model: str = False) -> str:
-    local_llm = sql_setting_get('local llm')
-    if fast_model and model is None:
-        model = 'qwen2:1.5b' if local_llm else 'llama-3.1-8b-instant'  # TODO: defult models in setting
-    elif model is None:
-        model = 'phi3' if local_llm else 'llama-3.1-70b-versatile'
+def llm_api(messages: list[dict[str, str]], fast_model: bool = False, model: str | None = None) -> str:
+    local_llm = sql_select(var='local_llm', table='Settings')[0][0]
 
-    local_llm = sql_setting_get('local llm')
-    return ollama_api(messages, model) if local_llm else groq_api(messages, model)
+    if model is None:
+        if fast_model and local_llm:
+            var = 'fast_local_llm_model'
+        elif local_llm:
+            var = 'local_llm_model'
+        elif fast_model:
+            var = 'fast_llm_model'
+        else:
+            var = 'llm_model'
+        model = sql_select(var=var, table='Settings')[0][0]
+
+    return groq_api(messages, str(model))
 
 
 def groq_api(messages: list, model: str = 'llama-3.1-70b-versatile') -> str:
     response = groq_client.chat.completions.create(
             messages=messages,
             model=model)
-    return response.choices[0].message.content
+    return str(response.choices[0].message.content)
 
 
 def ollama_api(messages: list, model: str = 'phi3') -> str:
@@ -110,7 +117,7 @@ def ollama_api(messages: list, model: str = 'phi3') -> str:
     return response['message']['content']
 
 
-
+'''
 def vector_datebase_load():
     role, content, time = sql_select('*')
     
@@ -126,12 +133,13 @@ def vector_datebase_load():
     )
 
 
-def vector_datebase_search(text: str, n_results: int = 2):
+# TODO: complete overhaul
+def vector_datebase_search(text: str, n_results: int = 2): 
 
     results = vector_memory.query(
         query_texts=[text],
         n_results=n_results,
-        where={"role": "user"}, # optional filter
+        where={"role": "user"},
     )
 
     # {'ids': [[str, str]], 'distances': [[float, float]], 'metadatas': [[dict, dict]], 'embeddings': None, 'documents': [[str, str]], 'uris': None, 'data': None, 'included': ['metadatas', 'documents', 'distances']}
@@ -151,12 +159,12 @@ def vector_datebase_incert(role: str, content: str):
         metadatas=[{"role": role, "time": time}],
         ids=[f'{content}-{role}-{time}']
     )
-
+'''
 
 
 def speech_recognition(file_name: str) -> str:
 
-    local_whisper = sql_setting_get('local whisper')
+    local_whisper = sql_select('local_whisper', 'Settings')[0][0]
     if local_whisper:
         
         model = whisper.load_model('base') 
@@ -354,7 +362,7 @@ def calendar_get_events(start_time=D.today(), duration: int = 1) -> list:
 
 
 
-def calendar_add_event(summary: str = '(No title)', start: datetime = D.today(), duration_in_hours: int = 24):
+def calendar_add_event(summary: str = '(No title)', start = D.today(), duration_in_hours: int = 24):
     end = start + duration_in_hours * hours
     event = Event(summary, start=start, end=end)
     return calendar.add_event(event)
@@ -372,7 +380,7 @@ def todoist_get_tasks() -> list:
     return tasks_list
 
 
-def todoist_new_task(content: str, due_string: str = None) -> str:
+def todoist_new_task(content: str, due_string: str | None = None) -> str:
     '''Create new todoist task. Returns id. 
     About due date: https://todoist.com/help/articles/introduction-to-due-dates-and-due-times-q7VobO'''
     task = todoist_api.add_task(content=content, due_string=due_string)
@@ -384,38 +392,6 @@ def todoist_close_task(task_id) -> bool:
     return todoist_api.close_task(task_id=str(task_id))
 
 
-
-# elevenlabs
-def tts(text: str, voice: str = 'Brittney Hart', model: str ='eleven_turbo_v2_5'):
-    '''text to mp3. Returs file name'''
-    local_tts = sql_setting_get('local tts')
-    file_name = 'tts - ' + ''.join(letter for letter in text[:64] if letter.isalnum() or letter==' ') + '.mp3'
-
-    if local_tts:
-        """
-        import torch
-        from TTS.api import TTS
-        
-        device = "cpu"
-
-        
-        tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=True).to(device)
-        tts.tts(text=str, speaker_wav=str, language=str)
-
-        tts.tts_to_file(text=text, speaker_wav=str, language=str, file_path=str)
-        """
-
-    else:
-        audio = elevenlabs_client.generate(
-            text=text,
-            voice=voice,
-            model=model
-        )
-            
-        save(audio=audio, filename=file_name)
-
-    return file_name
-    
 
 # wolfram alpha
 async def download_image_async(url: str, filename: str):
@@ -434,14 +410,10 @@ async def download_image_async(url: str, filename: str):
                 return False
             
 
-async def wolfram_quick_answer(text: str) -> str:
+def wolfram_quick_answer(text: str) -> str:
     '''Return wolfram short answer (asynchronously)'''
     query = quote(text)
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f'https://api.wolframalpha.com/v1/result?appid={WOLFRAM_SIMPLE_API}&i={query}') as response:
-            answer = await response.text()
-            print_colorama(f'text={text}, answer={answer}')
-            return answer
+    return requests.get(f'https://api.wolframalpha.com/v1/result?appid={WOLFRAM_SIMPLE_API}&i={query}').text
 
 
 async def wolfram_simple_answer(text: str) -> str | bool:
@@ -491,14 +463,23 @@ async def wolfram_step_by_step(text: str) -> tuple[str, list]:
             return step_plain, downloaded_image_paths
 
 
-async def ask_wolfram_alpha(text: str) -> tuple[str, str, list]:
+async def ask_wolfram_alpha(text: str) -> tuple[str, list]:
     '''Asynchronous function. Returns quick response, step by step solution text and downloaded image paths (simple(page) and step by step)'''
     # all three queries take 2 seconds
-    quick_answer_task = asyncio.create_task(wolfram_quick_answer(text))
+
+    quick_answer = wolfram_quick_answer(text)
+
+    if 'Wolfram|Alpha did not understand your input' in quick_answer:
+        print(f'ask_wolfram_alpha: Wolfram|Alpha did not understand {text}. Ask llm')
+        messages = [
+            {'role': 'user', 'content': prompt_for_transform_query_wolfram},
+            {'role': 'user', 'content': text}
+        ]
+        text = llm_api(messages=messages)
+
     simple_answer_task = asyncio.create_task(wolfram_simple_answer(text))
     step_by_step_task = asyncio.create_task(wolfram_step_by_step(text))
 
-    quick_answer = await quick_answer_task
     simple_answer_link = await simple_answer_task
     step_by_step_solution, step_images = await step_by_step_task
 
@@ -507,24 +488,24 @@ async def ask_wolfram_alpha(text: str) -> tuple[str, str, list]:
         images.insert(0, simple_answer_link)
     
     print_colorama(text)
-    return quick_answer, step_by_step_solution, images
+    return quick_answer, images
 
 
 
 # Tavily. https://tavily.com/
-async def tavily_qsearch(text: str):
-    '''Asynchronous function. Returns a short answer on the topic using the internet and photos. (include_answer=True, max_results=0)'''
+async def tavily_qsearch(text: str) -> tuple[str, list[str]]:
+    '''Asynchronous function. Returns a short answer on the topic using the internet, photos and urls. (include_answer=True, max_results=0)'''
     response = tavily_client.search(query=text, search_depth='basic', include_answer=True, include_images=True, max_results=0)
     answer = response['answer']
     images_url = response['images']
     nw = datetime.now().strftime('%Y%m%d_%H%M%S%f')
     downloaded_images = await asyncio.gather(*[download_image_async(url, f'tavily_qsearch-{nw}-{i}.png') for i, url in enumerate(images_url)])
     images = [image for image in downloaded_images if image]
-    print_colorama(f'responce: {response}, images: {images}')
+    print_colorama(f'answer: {answer}, images: {images}')
     return answer, images
 
 
-async def tavily_full_search(text: str, max_results: int = 2):
+async def tavily_full_search(text: str, max_results: int = 3):
     '''Asynchronous function. Returns text from multiple pages on a web request (include_raw_content=True) and photos'''
     response = tavily_client.search(query=text, search_depth='advanced', include_raw_content=True, include_images=True, max_results=max_results)
     results = response['results']
@@ -535,4 +516,3 @@ async def tavily_full_search(text: str, max_results: int = 2):
     print_colorama(f'{results}, {images}')
 
     return results, images
-
