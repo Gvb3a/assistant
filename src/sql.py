@@ -128,6 +128,7 @@ def sql_incert(table: Literal['Messages', 'Users', 'Settings'], variables: tuple
 
 
 def sql_update(table: Literal['Messages', 'Users', 'Settings'], variable: str, values, where_var = None, where_value = None) -> None:
+    '''UPDATE ? SET ? = ? WHERE ? = ?'''
     connection = sqlite3.connect('assistant.db')
     cursor = connection.cursor()
     

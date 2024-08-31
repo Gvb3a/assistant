@@ -5,7 +5,7 @@ from inspect import stack
 
 from api import (llm_api, calendar_add_event, calendar_get_events, 
                  todoist_new_task, todoist_get_tasks, todoist_close_task, tavily_full_search, tavily_qsearch,
-                 ask_wolfram_alpha)
+                 ask_wolfram_alpha, hugging_face_flux)
 from sql import sql_select_history, sql_incert_history
 from config import serivices, guiding_prompt, prompt_for_edit_calendar_todoist
 
@@ -23,7 +23,7 @@ def print_colorama(text: str | None = None, color: str = 'green'):
     print(f'{color}{func}{Style.RESET_ALL}: {str(text)}')
 
 
-def llm_regenerate(id: int) -> tuple[str, list]:
+def llm_regenerate(id: int, user_name: str) -> tuple[str, list]:
     
     # sql_delete_last()
 
@@ -34,7 +34,7 @@ def llm_regenerate(id: int) -> tuple[str, list]:
         messages.append({'role': role[i], 'content': content[i]})
 
     answer = llm_api(messages=messages)
-    # sql_incert('Messages', answer)
+    sql_incert_history(user_name=user_name, id=id, role='assistant', content=answer)
 
     print_colorama(f'id: {id}, answer: {answer}')
     return answer, []
@@ -77,7 +77,7 @@ def llm_select_tool(user_message: str, id) -> tuple[str, str]:
     return 'none', 'none'
 
 
-async def llm_use_tool(user_message: str, action: str, action_input: str, id) -> tuple[str | None, list]:
+async def llm_use_tool(user_message: str, action: str, action_input: str, id: int, user_name: str) -> tuple[str | None, list]:
     '''Using tools. Returns result and images'''
     result = None
     images = []
@@ -89,6 +89,10 @@ async def llm_use_tool(user_message: str, action: str, action_input: str, id) ->
 
     if action == 'wolfram_alpha':
         result, images = await ask_wolfram_alpha(action_input)
+
+    elif action == 'image_generate':
+        result, image = await hugging_face_flux(prompt=action_input) # TODO: setting, limit and multiple generations
+        images = [image] if image is not None else []
 
     elif action == 'tavily_answer':
         result, images = await tavily_qsearch(action_input)
@@ -129,7 +133,7 @@ async def llm_use_tool(user_message: str, action: str, action_input: str, id) ->
                 result = f'Error: {e}'
 
     elif action  == 'regenerate':
-        result, images = llm_regenerate(id)
+        result, images = llm_regenerate(id=id, user_name=user_name)
 
 
     result = f'{action}: {result}'
@@ -156,12 +160,16 @@ def llm_answer(user_message: str, user_name: str, id: int, system_message: str |
     messages = []
     for i in range(len(role)):
         messages.append({'role': role[i], 'content': content[i]})
-    print(messages)
-    response = llm_api(messages=messages)
-    print_colorama(response)
+    
+    if str(system_message).startswith('image_generate: Image successfully generated'):
+        final_response = '\n'.join(str(system_message).split('\n')[1:-1])
+    else:
+        final_response = llm_api(messages=messages)
 
-    sql_incert_history(user_name=user_name, id=id, role='assistant', content=response)
-    return response
+    print_colorama(final_response)
+
+    sql_incert_history(user_name=user_name, id=id, role='assistant', content=final_response)
+    return final_response
 
 
 async def llm_full_answer(user_message: str, id: int, user_name: str) -> tuple[str, list]:
@@ -169,7 +177,7 @@ async def llm_full_answer(user_message: str, id: int, user_name: str) -> tuple[s
 
     action, action_input = llm_select_tool(user_message=user_message, id=id)
 
-    system_message, images = await llm_use_tool(user_message=user_message, action=action, action_input=action_input, id=id)
+    system_message, images = await llm_use_tool(user_message=user_message, action=action, action_input=action_input, id=id, user_name=user_name)
 
     result = llm_answer(user_message=user_message, user_name=user_name, id=id, system_message=system_message)
     

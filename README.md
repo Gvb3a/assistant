@@ -55,7 +55,7 @@ Then you run bot.py.
 - [ ] Add online vector bd. Solve the problem of setting it up
 - [X] Add tavily
 - [X] Add deep search using tavily
-- [ ] Add image generation
+- [X] Add image generation
 - [ ] Working with pictures ([SimpleTex](https://simpletex.cn/), [OrcSpace](https://ocr.space/ocrapi), [NinjaApi](https://api-ninjas.com/api/imagetotext), [phi3 vision](https://huggingface.co/microsoft/Phi-3-vision-128k-instruct)). Maybe in google colab place the model and make an api
 - [ ] Allow llm to read the mail
 - [X] [langchain](https://python.langchain.com/v0.2/docs/tutorials/agents/)?

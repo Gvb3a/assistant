@@ -21,6 +21,10 @@ serivices = {
        'description': 'If the answer requires a wolfram alpha (calculate something, show solution, use wolfram etc).',
        'need_transform_query': True
    },
+   'image_generate': {
+       'description': 'If the user needs to generate a image. In Action Input there is a prompt. Model FLUX.1 dev is used',
+       'need_transform_query': True
+   },
    'vector_db': {
        'description': 'If the query requires accessing personal information stored in a vector database.',
        'need_transform_query': False
@@ -53,11 +57,12 @@ guiding_prompt_tools = ''
 for items in serivices.items():
     guiding_prompt_tools += f'{items[0]} - {items[1]["description"]}\n'
 
+action_input_example = 'For example, Wolfram Alpha will not understand Hi, help me with a solution ... or a query in a non-English language. For image_generate, you can remove the command (Generate image ...) or if the user asks to write the prompt themselves. And for tavily, it helps to give more relevant answers. You can also censor content.'
 guiding_prompt_end = f"""\nAnswer in the following format:
 
 Thought: you should always think about what to do
 Action: the action to take, should be one of {', '.join([i for i in serivices.keys()])}
-Action Input: if you need to convert the request for an action ({', '.join([item[0] for item in serivices.items() if item[1]['need_transform_query']])}). For example, Wolfram Alpha will not understand Hi, help me with a solution ... or a query in a non-English language. And for tavily, it helps to give more relevant answers. If the action does not require Action Input, write None. 
+Action Input: if you need to convert the request for an action ({', '.join([item[0] for item in serivices.items() if item[1]['need_transform_query']])}). {action_input_example}If the action does not require Action Input, write None. 
 
 You'll be given a message history"""
 

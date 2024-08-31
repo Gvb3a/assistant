@@ -25,7 +25,6 @@ dp = Dispatcher()
 
 
 
-
 def mail_message():
     text, dict_of_unread = mail()
 
@@ -128,7 +127,7 @@ async def message_handler(message: Message) -> None:
     username = message.from_user.username
     message_id = message.message_id
 
-    
+
     if message.voice:
         await message.reply('Start speech recognition')
         file_name = await download_file_for_id(file_id=message.voice.file_id, extension='mp3')
@@ -150,7 +149,7 @@ async def message_handler(message: Message) -> None:
         if action != 'none':
             temp_text = temp_text + f'\ntool: {action}'
             await bot.edit_message_text(chat_id=chat_id, message_id=message_id+1, text=temp_text + ('' if action == 'none' else '\nUsing the tool') )
-            system_message, images = await llm_use_tool(user_message=text, action=action, action_input=action_input, id=id)
+            system_message, images = await llm_use_tool(user_message=text, action=action, action_input=action_input, id=id, user_name=user)
         else:
             system_message, images = None, []
         await bot.edit_message_text(chat_id=chat_id, message_id=message_id+1, text=temp_text + '\nAsking the llm')
@@ -176,7 +175,7 @@ async def message_handler(message: Message) -> None:
                                      caption=caption)]
             for image in images[1:]:
                 media.append(InputMediaPhoto(media=FSInputFile(path=image)))
-            await message.answer_media_group(media=media)
+            await message.answer_media_group(media=media, parse_mode='Markdown')
 
             for image in images:
                 remove(image)

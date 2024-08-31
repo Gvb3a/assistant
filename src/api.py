@@ -13,6 +13,7 @@ from colorama import Fore, Style, init  # for multicoloured output to the consol
 from dotenv import load_dotenv  # to load values from .env
 from inspect import stack
 from urllib.parse import quote
+from time import sleep
 
 # google stuff (gmail). Why did I choose to learn from scratch instead of using the cat library?
 from google.auth.transport.requests import Request
@@ -26,12 +27,7 @@ from gcsa.event import Event
 
 from todoist_api_python.api import TodoistAPI  # Todoist. https://developer.todoist.com/rest/v2/#overview
 
-from chromadb import Client  # Local vector db
-
 from tavily import TavilyClient  # Internet search
-
-from elevenlabs.client import ElevenLabs  # Online tts
-from elevenlabs import save
 
 from sql import sql_select, sql_incert
 from config import prompt_for_transform_query_wolfram
@@ -54,11 +50,12 @@ todoist_api = TodoistAPI(str(todoist_api_key))  # https://developer.todoist.com/
 tavily_api_key = os.getenv('TAVILY_API_KEY')
 tavily_client = TavilyClient(api_key=tavily_api_key)
 
+from gradio_client import Client
+os.environ['HF_TOKEN'] = str(os.getenv('HUGGING_FACE_TOKEN'))
+hugging_face_flux_client = Client('black-forest-labs/FLUX.1-dev')
 
-elevenlabs_api_key = os.getenv('ELEVENLABS_API_KEY')
-elevenlabs_client = ElevenLabs(api_key=elevenlabs_api_key)
 
-
+from chromadb import Client  # Local vector db
 chromadb_client = Client()  # chromadb. Local vector datebase
 vector_memory = chromadb_client.create_collection("all-my-documents")  # https://github.com/chroma-core/chroma
 
@@ -516,3 +513,47 @@ async def tavily_full_search(text: str, max_results: int = 3):
     print_colorama(f'{results}, {images}')
 
     return results, images
+
+
+async def hugging_face_flux(prompt: str, seed: int = 0, randomize_seed: bool = True, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, num_inference_steps: int = 28) -> tuple[str | None, int | None]:
+    # TODO: add user limits and possibly multiple hugging face accounts 
+
+    attempts = 3
+
+    if not 0 <= seed <= 2**31-1:
+        seed = 0
+
+    if not 256 <= width <= 2048:
+        width = 1024
+
+    if not 256 <= height <= 2048:
+        height = 1024
+
+    if not 1 <= guidance_scale <= 15:
+        guidance_scale = 3.5
+
+    if not 1 <= num_inference_steps <= 50:
+        num_inference_steps = 28
+
+    for _ in range(attempts):
+        try:
+            result = hugging_face_flux_client.predict(
+                prompt=prompt,
+                seed=seed,
+                randomize_seed=randomize_seed,
+                width=width,
+                height=height,
+                guidance_scale=guidance_scale,
+                num_inference_steps=num_inference_steps
+            )
+            path = result[0]
+            seed = result[1]
+            result = f'Image successfully generated and will be sent to the user. \nPrompt: `{prompt}`\nSeed: `{seed}`'
+            break
+        except Exception as e:
+            path = None
+            result = f'Error: {e}'
+            print_colorama(color='RED', text=f'Error: {e}')
+            
+
+    return result, path
