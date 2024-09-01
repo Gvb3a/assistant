@@ -1,12 +1,10 @@
 import os
 import requests  # for gmail and wolfram alpha requests
-import whisper  # for local speech recognition
 import asyncio
 import aiohttp
 import aiofiles
 from bs4 import BeautifulSoup
 from groq import Groq  # for online llm
-from ollama import chat  # for local llm
 from beautiful_date import D, days, hours  # for google calendar. A comfortable way to set the date
 from datetime import datetime
 from colorama import Fore, Style, init  # for multicoloured output to the console
@@ -29,8 +27,12 @@ from todoist_api_python.api import TodoistAPI  # Todoist. https://developer.todo
 
 from tavily import TavilyClient  # Internet search
 
-from sql import sql_select, sql_incert
-from config import prompt_for_transform_query_wolfram
+from online_sql import sql_select, sql_incert
+from online_config import prompt_for_transform_query_wolfram
+'''
+from .online_sql import sql_select, sql_incert
+from .online_config import prompt_for_transform_query_wolfram
+'''
 
 init()  # that cmd would also have a different coloured output
 load_dotenv()  # load variables from the .env file
@@ -108,12 +110,6 @@ def groq_api(messages: list, model: str = 'llama-3.1-70b-versatile') -> str:
     return str(response.choices[0].message.content)
 
 
-def ollama_api(messages: list, model: str = 'phi3') -> str:
-    response = chat(model=model, 
-                    messages=messages)
-    return response['message']['content']
-
-
 '''
 def vector_datebase_load():
     role, content, time = sql_select('*')
@@ -161,24 +157,16 @@ def vector_datebase_incert(role: str, content: str):
 
 def speech_recognition(file_name: str) -> str:
 
-    local_whisper = sql_select('local_whisper', 'Settings')[0][0]
-    if local_whisper:
-        
-        model = whisper.load_model('base') 
-        result = model.transcribe(file_name)
+    
 
-        text = result['text']
-
-    else:
-
-        with open(file_name, "rb") as file:
-            translation = groq_client.audio.transcriptions.create(
-            file=(file_name, file.read()),
-            model="whisper-large-v3")
+    with open(file_name, "rb") as file:
+        translation = groq_client.audio.transcriptions.create(
+        file=(file_name, file.read()),
+        model="whisper-large-v3")
             
-            text = translation.text
+        text = translation.text
 
-    print_colorama(f'{text} local_whisper={local_whisper}')
+    print_colorama(f'{text} ')
 
     return str(text).strip()
 

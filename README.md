@@ -68,3 +68,4 @@ Then you run bot.py.
 - [ ] Add [Code Interpreting](https://e2b.dev/P)
 - [ ] Rebuild a complete vector datebase
 - [ ] Figure out the timeline for the calendar, add visualizations, and see how to give access to other users
+- [ ] API table (sql)
