@@ -3,8 +3,11 @@ from datetime import datetime
 from typing import Literal
 from colorama import Fore, Style, init
 
-from config import global_settings, system_prompt
-
+if __name__ == '__main__' or '.' not in __name__:
+    from config import global_settings, system_prompt
+else:
+    from .config import global_settings, system_prompt
+    
 init()
 
 def sql_launch():

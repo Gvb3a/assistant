@@ -27,12 +27,13 @@ from todoist_api_python.api import TodoistAPI  # Todoist. https://developer.todo
 
 from tavily import TavilyClient  # Internet search
 
-from online_sql import sql_select, sql_incert
-from online_config import prompt_for_transform_query_wolfram
-'''
-from .online_sql import sql_select, sql_incert
-from .online_config import prompt_for_transform_query_wolfram
-'''
+if __name__ == '__main__' or '.' not in __name__:
+    from online_sql import sql_select, sql_incert
+    from online_config import prompt_for_transform_query_wolfram
+else:
+    from .online_sql import sql_select, sql_incert
+    from .online_config import prompt_for_transform_query_wolfram
+
 
 init()  # that cmd would also have a different coloured output
 load_dotenv()  # load variables from the .env file

@@ -3,10 +3,10 @@ from datetime import datetime
 from typing import Literal
 from colorama import Fore, Style, init
 
-from online_config import global_settings, system_prompt
-'''
-from .online_config import global_settings, system_prompt
-'''
+if __name__ == '__main__' or '.' not in __name__:
+    from online_config import global_settings, system_prompt
+else:
+    from .online_config import global_settings, system_prompt
 
 init()
 

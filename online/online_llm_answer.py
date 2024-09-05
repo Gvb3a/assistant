@@ -3,19 +3,18 @@ from colorama import Fore, init, Style
 import asyncio
 from inspect import stack
 
-from online_api import (llm_api, calendar_add_event, calendar_get_events, 
-                 todoist_new_task, todoist_get_tasks, todoist_close_task, tavily_full_search, tavily_qsearch,
-                 ask_wolfram_alpha, hugging_face_flux)
-from online_sql import sql_select_history, sql_incert_history
-from online_config import serivices, guiding_prompt, prompt_for_edit_calendar_todoist
-
-'''
-from .online_api import (llm_api, calendar_add_event, calendar_get_events, 
-                 todoist_new_task, todoist_get_tasks, todoist_close_task, tavily_full_search, tavily_qsearch,
-                 ask_wolfram_alpha, hugging_face_flux)
-from .online_sql import sql_select_history, sql_incert_history
-from .online_config import serivices, guiding_prompt, prompt_for_edit_calendar_todoist
-'''
+if __name__ == '__main__' or '.' not in __name__:
+    from online_api import (llm_api, calendar_add_event, calendar_get_events,
+                            todoist_new_task, todoist_get_tasks, todoist_close_task, tavily_full_search, tavily_qsearch,
+                            ask_wolfram_alpha, hugging_face_flux)
+    from online_sql import sql_select_history, sql_incert_history
+    from online_config import serivices, guiding_prompt, prompt_for_edit_calendar_todoist
+else:
+    from .online_api import (llm_api, calendar_add_event, calendar_get_events,
+                             todoist_new_task, todoist_get_tasks, todoist_close_task, tavily_full_search, tavily_qsearch,
+                             ask_wolfram_alpha, hugging_face_flux)
+    from .online_sql import sql_select_history, sql_incert_history
+    from .online_config import serivices, guiding_prompt, prompt_for_edit_calendar_todoist
 
 
 init()

@@ -8,12 +8,13 @@ from colorama import Fore, Style, init
 from datetime import datetime
 from os import getenv, remove
 
-from online_api import mail, gmail_modify, speech_recognition
-from online_llm_answer import llm_select_tool, llm_use_tool, llm_answer, llm_regenerate
-'''
-from .online_api import mail, gmail_modify, speech_recognition
-from .online_llm_answer import llm_select_tool, llm_use_tool, llm_answer, llm_regenerate
-'''
+
+if __name__ == '__main__' or '.' not in __name__:
+    from online_api import mail, gmail_modify, speech_recognition
+    from online_llm_answer import llm_select_tool, llm_use_tool, llm_answer, llm_regenerate
+else:
+    from .online_api import mail, gmail_modify, speech_recognition
+    from .online_llm_answer import llm_select_tool, llm_use_tool, llm_answer, llm_regenerate
     
 
 init()
