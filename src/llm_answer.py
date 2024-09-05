@@ -201,7 +201,7 @@ def langchain_answer(text):
     import os
     from dotenv import load_dotenv
 
-    load_dotenv()
+    load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
     os.environ["GROQ_API_KEY"] = os.getenv('GROQ_API_KEY')
     os.environ["TAVILY_API_KEY"] = os.getenv('TAVILY_API_KEY')

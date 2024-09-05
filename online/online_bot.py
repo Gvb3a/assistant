@@ -18,7 +18,7 @@ else:
     
 
 init()
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 
 bot_token = getenv('BOT_TOKEN')

@@ -36,7 +36,7 @@ else:
 
 
 init()  # that cmd would also have a different coloured output
-load_dotenv()  # load variables from the .env file
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))  # load variables from the .env file
 
 
 path = '\\'.join(os.path.dirname(os.path.abspath(__file__)).split('\\')[:-1])
