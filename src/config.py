@@ -57,7 +57,7 @@ guiding_prompt_tools = ''
 for items in serivices.items():
     guiding_prompt_tools += f'{items[0]} - {items[1]["description"]}\n'
 
-action_input_example = 'For example, Wolfram Alpha will not understand Hi, help me with a solution ... or a query in a non-English language. For image_generate, you can remove the command (Generate image ...) or if the user asks to write the prompt themselves. And for tavily, it helps to give more relevant answers. You can also censor content.'
+action_input_example = 'For example, Wolfram Alpha will not understand Hi, help me with a solution ... or a query in a non-English language. For image_generate, you can remove the command (Generate image ...) or if the user asks to write the prompt themselves. And for tavily, it helps to give more relevant answers. You can also censor content and avoid obscene requests.'
 guiding_prompt_end = f"""\nAnswer in the following format:
 
 Thought: you should always think about what to do

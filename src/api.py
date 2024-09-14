@@ -4,6 +4,7 @@ import whisper  # for local speech recognition
 import asyncio
 import aiohttp
 import aiofiles
+import detectlanguage
 from bs4 import BeautifulSoup
 from groq import Groq  # for online llm
 from ollama import chat  # for local llm
@@ -14,6 +15,10 @@ from dotenv import load_dotenv  # to load values from .env
 from inspect import stack
 from urllib.parse import quote
 from time import sleep
+from deep_translator import GoogleTranslator
+
+import google.generativeai as genai
+
 
 # google stuff (gmail). Why did I choose to learn from scratch instead of using the cat library?
 from google.auth.transport.requests import Request
@@ -28,6 +33,8 @@ from gcsa.event import Event
 from todoist_api_python.api import TodoistAPI  # Todoist. https://developer.todoist.com/rest/v2/#overview
 
 from tavily import TavilyClient  # Internet search
+
+from gpt_researcher import GPTResearcher
 
 if __name__ == '__main__' or '.' not in __name__:
     from sql import sql_select, sql_incert
@@ -57,9 +64,23 @@ tavily_api_key = os.getenv('TAVILY_API_KEY')
 tavily_client = TavilyClient(api_key=tavily_api_key)
 
 from gradio_client import Client
-os.environ['HF_TOKEN'] = str(os.getenv('HUGGING_FACE_TOKEN'))
+os.environ['HF_TOKEN'] = str(os.getenv('HUGGINGFACE_API_KEY'))
 hugging_face_flux_client = Client('black-forest-labs/FLUX.1-dev')
 
+
+# gpt-researcher
+os.environ['GROQ_API_KEY'] = str(os.getenv('GROQ_API_KEY'))
+os.environ['EMBEDDING_PROVIDER'] = "huggingface"
+os.environ['OPENAI_API_KEY'] = str(os.getenv('OPENAI_API_KEY'))
+os.environ['TAVILY_API_KEY'] = str(os.getenv('TAVILY_API_KEY'))
+os.environ['HUGGINGFACE_EMBEDDING_MODEL'] = str(os.getenv('HUGGINGFACE_EMBEDDING_MODEL'))
+os.environ['HUGGINGFACE_API_KEY'] = str(os.getenv('HUGGINGFACE_API_KEY'))
+os.environ['DEFAULT_LLM_MODEL'] = 'llama-3.1-8b-instant'
+os.environ['FAST_LLM_MODEL'] = 'llama-3.1-8b-instant'
+os.environ['SMART_LLM_MODEL'] = 'llama-3.1-70b-versatile'
+os.environ['LLM_PROVIDER'] = 'groq'
+
+detectlanguage.configuration.api_key = os.getenv('DETECT_LANGUAGE_API')
 
 from chromadb import Client  # Local vector db
 chromadb_client = Client()  # chromadb. Local vector datebase
@@ -67,6 +88,7 @@ vector_memory = chromadb_client.create_collection("all-my-documents")  # https:/
 
 WOLFRAM_SIMPLE_API = os.getenv('WOLFRAM_SIMPLE_API_KEY')
 WOLFRAM_SHOW_STEPS_API = os.getenv('WOLFRAM_SHOW_STEPS_RESULT')
+
 
 
 CREDENTIALS_FILE = f'{path}\\client_secret.json'  # required for gmail and google calendar
@@ -88,6 +110,8 @@ def print_colorama(text: str | None = None, color: str = 'green'):
     color = colors.get(color, Fore.GREEN)
 
     print(f'{color}{func}{Style.RESET_ALL}: {str(text)}')
+
+
 
 
 def llm_api(messages: list[dict[str, str]], fast_model: bool = False, model: str | None = None) -> str:
@@ -524,7 +548,6 @@ async def tavily_full_search(text: str, max_results: int = 3):
 
 async def hugging_face_flux(prompt: str, seed: int = 0, randomize_seed: bool = True, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, num_inference_steps: int = 28) -> tuple[str | None, int | None]:
     # TODO: add user limits and possibly multiple hugging face accounts 
-
     attempts = 3
 
     if not 0 <= seed <= 2**31-1:
@@ -564,3 +587,41 @@ async def hugging_face_flux(prompt: str, seed: int = 0, randomize_seed: bool = T
             
 
     return result, path
+
+    
+def detect_language(text: str) -> str:
+    try:
+        return detectlanguage.simple_detect(text)
+    except:
+        return 'en'
+
+
+def translate(text: str, target_language: str = 'en', source_language: str = 'auto') -> str:
+    result = str()
+
+    for i in range(int(len(text)/4900+1)): # google translate doesn't translate more than 5000 characters, but I'll take a margin of safety.
+        result += GoogleTranslator(source=source_language, target=target_language).translate(text[4900*i:4900*(i+1)])
+
+    return result
+
+
+async def get_report(query: str, report_type: str) -> str:
+    researcher = GPTResearcher(query=query, report_type=report_type)
+    await researcher.conduct_research()
+    report = await researcher.write_report()
+    return report
+
+
+async def gpt_research(query: str, trans: bool = True) -> str:
+
+    if trans:
+        source_language = detect_language(query)
+        query = translate(text=query, target_language = 'en', source_language=source_language)
+        print(f'gpt_resarch translate query("{source_language}") to {query}')
+        
+    report = await get_report(query, "research_report")
+    
+    if trans and source_language != 'en':
+        report = translate(text=report, target_language = source_language)
+        
+    return report
