@@ -6,7 +6,7 @@ from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
 from colorama import Fore, Style, init
 from datetime import datetime
-from os import getenv, remove
+import os
 
 
 if __name__ == '__main__' or '.' not in __name__:
@@ -21,8 +21,8 @@ init()
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 
-bot_token = getenv('BOT_TOKEN')
-admin_id = getenv('ADMIN_ID')
+bot_token = os.getenv('BOT_TOKEN')
+admin_id = os.getenv('ADMIN_ID')
 
 
 bot = Bot(token=str(bot_token))
@@ -139,7 +139,7 @@ async def message_handler(message: Message) -> None:
         file_name = await download_file_for_id(file_id=message.voice.file_id, extension='mp3')
 
         text = speech_recognition(file_name=file_name).strip()
-        remove(file_name)
+        os.remove(file_name)
         
         temp_text = f'Recognized: {text}'
         await bot.edit_message_text(chat_id=chat_id, message_id=message_id+1, text=temp_text)
@@ -184,7 +184,7 @@ async def message_handler(message: Message) -> None:
             await message.answer_media_group(media=media, parse_mode='Markdown')
 
             for image in images:
-                remove(image)
+                os.remove(image)
 
     except Exception as e:
         print(f'message_handler 2: {e}')

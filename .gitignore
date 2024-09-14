@@ -12,3 +12,4 @@ token.pickle
 token_*.json
 
 tts_*
+*.ipynb

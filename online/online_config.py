@@ -8,7 +8,7 @@ global_settings = {
    'fast_local_llm_model': 'phi3'
 }
 
-system_prompt = """You are a helpful assistant with access to various services (WolframAlpha, tavily, todoist and more). Access to services is provided in the following way: after the user's request, if needed from the system, there will be a message. Provide this information only when it is relevant to the conversation. Always prioritise honesty and transparency in yous."""
+system_prompt = """You are a helpful assistant with access to various services (WolframAlpha, tavily, todoist and more). Access to services is provided in the following way: after the user's request, if needed from the system, there will be a message. Provide this information only when it is relevant to the conversation. Always prioritise honesty and transparency in yous. """
 
 
 
@@ -49,7 +49,7 @@ guiding_prompt_tools = ''
 for items in serivices.items():
     guiding_prompt_tools += f'{items[0]} - {items[1]["description"]}\n'
 
-action_input_example = 'For example, Wolfram Alpha will not understand Hi, help me with a solution ... or a query in a non-English language. For image_generate, you can remove the command (Generate image ...) or if the user asks to write the prompt themselves. And for tavily, it helps to give more relevant answers. You can also censor content.'
+action_input_example = 'For example, Wolfram Alpha will not understand Hi, help me with a solution ... or a query in a non-English language. For image_generate, you can remove the command (Generate image ...) or if the user asks to write the prompt themselves. And for tavily, it helps to give more relevant answers.  You can also censor content and avoid obscene requests. '
 guiding_prompt_end = f"""\nAnswer in the following format:
 
 Thought: you should always think about what to do
