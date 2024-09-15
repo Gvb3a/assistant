@@ -15,10 +15,10 @@ from datetime import datetime
 
 if __name__ == '__main__' or '.' not in __name__:
     from api import mail, gmail_modify, speech_recognition, gpt_research
-    from llm_answer import llm_select_tool, llm_use_tool, llm_answer, llm_regenerate
+    from llm_answer import llm_select_tool, llm_use_tool, llm_answer
 else:
     from .api import mail, gmail_modify, speech_recognition, gpt_research
-    from .llm_answer import llm_select_tool, llm_use_tool, llm_answer, llm_regenerate
+    from .llm_answer import llm_select_tool, llm_use_tool, llm_answer
     
 
 init()
@@ -30,7 +30,7 @@ admin_id = os.getenv('ADMIN_ID')
 
 
 class FSM(StatesGroup):
-    processing = State()  # is enabled if the request is being processed
+    processing = State()
     research = State()
 
 
@@ -122,19 +122,6 @@ async def command_research(message: Message, state: FSMContext) -> None:
     print('research', message.from_user.full_name)
     await state.set_state(FSM.research)
 
-
-@dp.message(Command('regenerate'))
-async def command_regenerate(message: Message) -> None:
-    chat_id = message.chat.id
-    id = message.from_user.id
-    message_id = message.message_id
-
-    answer, images = llm_regenerate(id=id)
-
-    try:
-        await message.answer(text=answer, parse_mode='Markdown')
-    except:
-        await message.answer(text=answer)
 
     
 

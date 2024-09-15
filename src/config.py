@@ -44,10 +44,6 @@ serivices = {
    'tavily_full_answer': {
        'description': 'If the answer require full text from the Internet (for example, the entire lyrics of a song or is it better to give the bot all the information).',
        'need_transform_query': True
-   },
-   'regenerate': {
-       'description': 'User asks to regenerate message.',
-       'need_transform_query': False
    }
 }
 guiding_prompt_start = 'You are the chatbot\'s assistant. You have to choose the tool that the chatbot will use. Tools:\n\n'

@@ -11,8 +11,12 @@ todoist_api_python==2.1.5
 openai-whisper==20231117
 chromadb==0.5.5
 tavily-python==0.3.9
-lxml=5.3.0
+lxml==5.3.0
 deep-translator==1.11.4
 detectlanguage==1.5.0
-gpt-researcher==0.9.5
+gpt-researcher
 sentence-transformers==3.1.0
+google-generativeai
+langchain_google_genai
+langchain_community
+gradio_client
