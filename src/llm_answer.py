@@ -30,23 +30,6 @@ def print_colorama(text: str | None = None, color: str = 'green'):
     print(f'{color}{func}{Style.RESET_ALL}: {str(text)}')
 
 
-def llm_regenerate(id: int, user_name: str) -> tuple[str, list]:
-    
-    # sql_delete_last()
-
-    user_name, user_id, message_id, role, content, time, addition = sql_select_history(id=id, n=5)
-
-    messages = []
-    for i in range(len(role)):
-        messages.append({'role': role[i], 'content': content[i]})
-
-    answer = llm_api(messages=messages)
-    sql_incert_history(user_name=user_name, id=id, role='assistant', content=answer)
-
-    print_colorama(f'id: {id}, answer: {answer}')
-    return answer, []
-
-
 def llm_select_tool(user_message: str, id) -> tuple[str, str]:
     'The beginning of the response chain. Returns action (tool) and action input (for some tools)'
     user_name, user_id, message_id, role, content, time, addition = sql_select_history(id=id, n=2)
@@ -138,9 +121,6 @@ async def llm_use_tool(user_message: str, action: str, action_input: str, id: in
             except Exception as e:
                 print_colorama(f'edit_calendar_or_todoist: {e}')
                 result = f'Error: {e}'
-
-    elif action  == 'regenerate':
-        result, images = llm_regenerate(id=id, user_name=user_name)
 
 
     result = f'{action}: {result}'

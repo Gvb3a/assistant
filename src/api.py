@@ -6,7 +6,7 @@ import aiohttp
 import aiofiles
 import detectlanguage
 from bs4 import BeautifulSoup
-from groq import Groq  # for online llm
+# from groq import Groq  # for online llm
 from ollama import chat  # for local llm
 from beautiful_date import D, days, hours  # for google calendar. A comfortable way to set the date
 from datetime import datetime
@@ -16,6 +16,7 @@ from inspect import stack
 from urllib.parse import quote
 from time import sleep
 from deep_translator import GoogleTranslator
+import PIL.Image
 
 import google.generativeai as genai
 
@@ -36,6 +37,11 @@ from tavily import TavilyClient  # Internet search
 
 from gpt_researcher import GPTResearcher
 
+from langchain.document_loaders import PyPDFLoader
+from langchain.embeddings import HuggingFaceEmbeddings
+# from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain import FAISS
+
 if __name__ == '__main__' or '.' not in __name__:
     from sql import sql_select, sql_incert
     from config import prompt_for_transform_query_wolfram
@@ -51,9 +57,14 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))  # load variables f
 
 path = '\\'.join(os.path.dirname(os.path.abspath(__file__)).split('\\')[:-1])
 
-
+'''
 groq_api_key = os.getenv('GROQ_API')  # Groq
 groq_client = Groq(api_key=groq_api_key) # https://console.groq.com/docs/quickstart
+'''
+
+os.environ["GOOGLE_API_KEY"] = str(os.getenv("GOOGLE_API_KEY"))
+genai.configure(api_key=os.environ['GOOGLE_API_KEY'])
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 
 todoist_api_key = os.getenv('TODOIST_API')  # Todoist. TODO: local todolist
@@ -81,11 +92,11 @@ os.environ['SMART_LLM_MODEL'] = 'llama-3.1-70b-versatile'
 os.environ['LLM_PROVIDER'] = 'groq'
 
 detectlanguage.configuration.api_key = os.getenv('DETECT_LANGUAGE_API')
-
+'''
 from chromadb import Client  # Local vector db
 chromadb_client = Client()  # chromadb. Local vector datebase
 vector_memory = chromadb_client.create_collection("all-my-documents")  # https://github.com/chroma-core/chroma
-
+'''
 WOLFRAM_SIMPLE_API = os.getenv('WOLFRAM_SIMPLE_API_KEY')
 WOLFRAM_SHOW_STEPS_API = os.getenv('WOLFRAM_SHOW_STEPS_RESULT')
 
@@ -113,7 +124,7 @@ def print_colorama(text: str | None = None, color: str = 'green'):
 
 
 
-
+'''
 def llm_api(messages: list[dict[str, str]], fast_model: bool = False, model: str | None = None) -> str:
     local_llm = sql_select(var='local_llm', table='Settings')[0][0]
 
@@ -143,6 +154,65 @@ def ollama_api(messages: list, model: str = 'phi3') -> str:
                     messages=messages)
     return response['message']['content']
 
+'''
+def genai_text_api(history: list = [dict], user_message: str | None = None):  # TODO: own api on pythonanywhere
+
+    if user_message == None:
+
+        if history == []:
+            return ''
+        
+        user_message = history[-1]['content']
+        history = history[:-1]
+
+    chat = model.start_chat(
+        history=history
+    )
+    response = chat.send_message(user_message)
+
+    return response.text
+
+
+def genai_image_api(image_path: str, text: str = ''):
+    image = PIL.Image.open(image_path)
+    
+    response = model.generate_content([text, image])
+
+    return response.text
+
+
+hg_embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+# google_embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+
+# https://github.com/Anil-matcha/ChatPDF/blob/main/Gemini_ChatPDF.ipynb
+def genai_pdf_api(pdf: str, history: list = [], query: str | None = None) -> str:
+
+    # Manage query input
+    if query is None:
+        query = history[-1].get('content') if history else ''
+        history = history[:-1] if history else []
+
+    # Load and split PDF into dynamic chunks
+    loader = PyPDFLoader(pdf)
+    pages = loader.load_and_split()  # Adjust chunk size as needed
+
+    # Create embeddings using the Deep Averaging Network Encoder
+    db = FAISS.from_documents(pages, hg_embeddings)
+
+    # Perform a similarity search
+    docs = db.similarity_search(query)
+
+    # Prepare content for response
+    content = "\n".join([x.page_content for x in docs])  # Include page number
+    qa_prompt = ("Use the following pieces of context to answer the user's question. "
+                 "If you don't know the answer, just say that you don't know, don't try to make up an answer. "
+                 "----------------")
+    input_text = f"{qa_prompt}\nContext: {content}\n---\nUser question:\n{query}"
+
+    # Call the generative AI text API
+    result = genai_text_api(history=history, user_message=input_text)
+
+    return result
 
 '''
 def vector_datebase_load():
@@ -604,11 +674,15 @@ def translate(text: str, target_language: str = 'en', source_language: str = 'au
 
     return result
 
-
-async def get_report(query: str, report_type: str) -> str:
+_embeddings = HuggingFaceEmbeddings(model_name='all-MiniLM-L6-v2')
+async def get_report(query: str, report_type: str = "research_report") -> str:
     researcher = GPTResearcher(query=query, report_type=report_type)
     await researcher.conduct_research()
     report = await researcher.write_report()
+    
+    if report is None:
+        raise ValueError("Report generation failed, returned None.")
+    
     return report
 
 
@@ -619,9 +693,8 @@ async def gpt_research(query: str, trans: bool = True) -> str:
         query = translate(text=query, target_language = 'en', source_language=source_language)
         print(f'gpt_resarch translate query("{source_language}") to {query}')
         
-    report = await get_report(query, "research_report")
-    
-    if trans and source_language != 'en':
-        report = translate(text=report, target_language = source_language)
+    report = await get_report(query)
         
     return report
+
+print(asyncio.run(gpt_research('Harry truman')))
