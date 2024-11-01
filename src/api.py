@@ -1,627 +1,419 @@
 import os
-import requests  # for gmail and wolfram alpha requests
-import whisper  # for local speech recognition
-import asyncio
-import aiohttp
-import aiofiles
-import detectlanguage
-from bs4 import BeautifulSoup
-from groq import Groq  # for online llm
-from ollama import chat  # for local llm
-from beautiful_date import D, days, hours  # for google calendar. A comfortable way to set the date
-from datetime import datetime
-from colorama import Fore, Style, init  # for multicoloured output to the console
-from dotenv import load_dotenv  # to load values from .env
+import requests
 from inspect import stack
 from urllib.parse import quote
 from time import sleep
-from deep_translator import GoogleTranslator
-
-import google.generativeai as genai
-
-
-# google stuff (gmail). Why did I choose to learn from scratch instead of using the cat library?
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-
-# google calendar library. https://github.com/kuzmoyev/google-calendar-simple-api
-from gcsa.google_calendar import GoogleCalendar
-from gcsa.event import Event
-
-from todoist_api_python.api import TodoistAPI  # Todoist. https://developer.todoist.com/rest/v2/#overview
-
-from tavily import TavilyClient  # Internet search
-
-from gpt_researcher import GPTResearcher
-
-if __name__ == '__main__' or '.' not in __name__:
-    from sql import sql_select, sql_incert
-    from config import prompt_for_transform_query_wolfram
-    
-else:
-    from .sql import sql_select, sql_incert
-    from .config import prompt_for_transform_query_wolfram
+from datetime import datetime
+from dotenv import load_dotenv
+from bs4 import BeautifulSoup
+from typing import Literal
 
 
-init()  # that cmd would also have a different coloured output
-load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))  # load variables from the .env file
-
-
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 path = '\\'.join(os.path.dirname(os.path.abspath(__file__)).split('\\')[:-1])
 
 
-groq_api_key = os.getenv('GROQ_API')  # Groq
-groq_client = Groq(api_key=groq_api_key) # https://console.groq.com/docs/quickstart
+
+# pdf, docx, mp3 to text. TODO: summary in large document
+import PyPDF2
+import docx
+from groq import Groq
+
+groq_api_key = os.getenv('GROQ_API_KEY')
+groq_client = Groq(api_key=groq_api_key)
 
 
-todoist_api_key = os.getenv('TODOIST_API')  # Todoist. TODO: local todolist
-todoist_api = TodoistAPI(str(todoist_api_key))  # https://developer.todoist.com/rest/v2/#overview
+def speech_recognition(file_name: str) -> str:  # TODO: local_whisper
 
-
-tavily_api_key = os.getenv('TAVILY_API_KEY')
-tavily_client = TavilyClient(api_key=tavily_api_key)
-
-from gradio_client import Client
-os.environ['HF_TOKEN'] = str(os.getenv('HUGGINGFACE_API_KEY'))
-hugging_face_flux_client = Client('black-forest-labs/FLUX.1-dev')
-
-
-# gpt-researcher
-os.environ['GROQ_API_KEY'] = str(os.getenv('GROQ_API_KEY'))
-os.environ['EMBEDDING_PROVIDER'] = "huggingface"
-os.environ['OPENAI_API_KEY'] = str(os.getenv('OPENAI_API_KEY'))
-os.environ['TAVILY_API_KEY'] = str(os.getenv('TAVILY_API_KEY'))
-os.environ['HUGGINGFACE_EMBEDDING_MODEL'] = str(os.getenv('HUGGINGFACE_EMBEDDING_MODEL'))
-os.environ['HUGGINGFACE_API_KEY'] = str(os.getenv('HUGGINGFACE_API_KEY'))
-os.environ['DEFAULT_LLM_MODEL'] = 'llama-3.1-8b-instant'
-os.environ['FAST_LLM_MODEL'] = 'llama-3.1-8b-instant'
-os.environ['SMART_LLM_MODEL'] = 'llama-3.1-70b-versatile'
-os.environ['LLM_PROVIDER'] = 'groq'
-
-detectlanguage.configuration.api_key = os.getenv('DETECT_LANGUAGE_API')
-
-from chromadb import Client  # Local vector db
-chromadb_client = Client()  # chromadb. Local vector datebase
-vector_memory = chromadb_client.create_collection("all-my-documents")  # https://github.com/chroma-core/chroma
-
-WOLFRAM_SIMPLE_API = os.getenv('WOLFRAM_SIMPLE_API_KEY')
-WOLFRAM_SHOW_STEPS_API = os.getenv('WOLFRAM_SHOW_STEPS_RESULT')
-
-
-
-CREDENTIALS_FILE = f'{path}\\client_secret.json'  # required for gmail and google calendar
-num_of_gmail_accounts = 3
-TOKEN_FILES = [f'{path}\\token_{i}.json' for i in range(num_of_gmail_accounts)]
-
-
-calendar = GoogleCalendar(credentials_path=CREDENTIALS_FILE)  #https://github.com/kuzmoyev/google-calendar-simple-api
-
-
-
-def print_colorama(text: str | None = None, color: str = 'green'):
-    '''When this function is called in another function, its green name is displayed (via stak) and then the text that is passed.
-    Made to avoid writing {Fore.GREEN}{func name}{Style.RESET_ALL}: {text} all the time.'''
-    colors = {'green': Fore.GREEN, 'red': Fore.RED, 'yellow': Fore.YELLOW}
-    
-    func = stack()[1].function
-
-    color = colors.get(color, Fore.GREEN)
-
-    print(f'{color}{func}{Style.RESET_ALL}: {str(text)}')
-
-
-
-
-def llm_api(messages: list[dict[str, str]], fast_model: bool = False, model: str | None = None) -> str:
-    local_llm = sql_select(var='local_llm', table='Settings')[0][0]
-
-    if model is None:
-        if fast_model and local_llm:
-            var = 'fast_local_llm_model'
-        elif local_llm:
-            var = 'local_llm_model'
-        elif fast_model:
-            var = 'fast_llm_model'
-        else:
-            var = 'llm_model'
-        model = sql_select(var=var, table='Settings')[0][0]
-
-    return groq_api(messages, str(model))
-
-
-def groq_api(messages: list, model: str = 'llama-3.1-70b-versatile') -> str:
-    response = groq_client.chat.completions.create(
-            messages=messages,
-            model=model)
-    return str(response.choices[0].message.content)
-
-
-def ollama_api(messages: list, model: str = 'phi3') -> str:
-    response = chat(model=model, 
-                    messages=messages)
-    return response['message']['content']
-
-
-'''
-def vector_datebase_load():
-    role, content, time = sql_select('*')
-    
-    print_colorama()
-
-    if content == []:
-        return
-
-    vector_memory.add(
-        documents=content,
-        metadatas=[{'role': role[i], 'time': time[i]} for i in range(len(content))],
-        ids=[f'{content[i]}-{role[i]}-{time[i]}' for i in range(len(content))]  # an obligatory element that must be individualised
-    )
-
-
-# TODO: complete overhaul
-def vector_datebase_search(text: str, n_results: int = 2): 
-
-    results = vector_memory.query(
-        query_texts=[text],
-        n_results=n_results,
-        where={"role": "user"},
-    )
-
-    # {'ids': [[str, str]], 'distances': [[float, float]], 'metadatas': [[dict, dict]], 'embeddings': None, 'documents': [[str, str]], 'uris': None, 'data': None, 'included': ['metadatas', 'documents', 'distances']}
-    pretty_result = []
-    for i in range(len(results['ids'][0])):
-        pretty_result.append(f"{results['metadatas'][0][i]['role']} at {results['metadatas'][0][i]['time']}: {results['documents'][0][i]}")
-
-    return pretty_result
-
-
-def vector_datebase_incert(role: str, content: str):
-
-    time = datetime.now().strftime('%Y.%m.%d %H:%M')
-
-    vector_memory.add(
-        documents=[content],
-        metadatas=[{"role": role, "time": time}],
-        ids=[f'{content}-{role}-{time}']
-    )
-'''
-
-
-def speech_recognition(file_name: str) -> str:
-
-    local_whisper = sql_select('local_whisper', 'Settings')[0][0]
-    if local_whisper:
+    with open(file_name, "rb") as file:
+        translation = groq_client.audio.transcriptions.create(
+        file=(file_name, file.read()),
+        model="whisper-large-v3")
         
-        model = whisper.load_model('base') 
-        result = model.transcribe(file_name)
-
-        text = result['text']
-
-    else:
-
-        with open(file_name, "rb") as file:
-            translation = groq_client.audio.transcriptions.create(
-            file=(file_name, file.read()),
-            model="whisper-large-v3")
-            
-            text = translation.text
-
-    print_colorama(f'{text} local_whisper={local_whisper}')
-
+        text = translation.text
+ 
     return str(text).strip()
 
 
-# gmail
-def gmail_load_credentials() -> list:
-    # Returns a list of creds that are required for queries. Creates files like token_<num>.json if they do not exist (you will need to register)
-    creds_list = []
-    scopes = ['https://mail.google.com/']
+def pdf_to_text(pdf_path: str) -> str:
+    with open(pdf_path, 'rb') as pdf_file:
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
+        extracted_text = ""
+        for page in pdf_reader.pages:
+            text = page.extract_text()
+            if text:
+                extracted_text += text
+
+    return extracted_text
+
+
+def docx_to_text(docx_path: str) -> str:
+    doc = docx.Document(docx_path)
+    full_text = []
+    for para in doc.paragraphs:
+        full_text.append(para.text)
+
+    return '\n'.join(full_text)
+
+
+def files_to_text(files: list | str) -> str:
+    'Turns text files or audio into text'
+    if type(files) == str:
+        files = [files]
+
+    result = ''
     
-    for token_file in TOKEN_FILES:
+    try:
+        for file_path in files:
 
-        if os.path.exists(token_file):
-            creds = Credentials.from_authorized_user_file(token_file, scopes=scopes)
-        else:
-            creds = None
-
-        if not creds or not creds.valid:
-
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, scopes=scopes)
-                creds = flow.run_local_server(port=0)
-
-            with open(token_file, "w") as token:
-                token.write(creds.to_json())
-
-        creds_list.append(creds)
-
-    return creds_list
-
-
-def gmail_list(max_results=5):
-    # sample result: [{'messages': [{'id': str, 'threadId': str}, ...], 'nextPageToken': str, 'resultSizeEstimate': 201}]
-    creds_list = gmail_load_credentials()
-    result_list = []
-
-    for creds in creds_list:
-        url = f'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults={max_results}'
-        headers = {'Authorization': f'Bearer {creds.token}', 'Content-Type': 'application/json'}
-
-        response = requests.get(
-            url=url,
-            headers=headers
-        )
-        
-        result_list.append(response.json())
-
-    return result_list
-    
-
-def gmail_modify(message_id: str, account: int = 0) -> None:
-    # makes a message read if it is not read and vice versa
-    creds = gmail_load_credentials()[account]
-       
-    url = f'https://gmail.googleapis.com/gmail/v1/users/me/threads/{message_id}/modify'
-
-    headers = {
-        'Authorization': f'Bearer {creds.token}',
-        'Content-Type': 'application/json'
-    }
-
-    unread = gmail_message(message_id, creds)[-1]  # snippet, sender, to, subject, unread (bool)
-    
-    
-    if unread:
-        body = {
-            "removeLabelIds": ["UNREAD"]
-        }
-    else:
-        body = {
-            "addLabelIds": ["UNREAD"]
-        }
-    
-    response = requests.post(url, headers=headers, json=body)
-    
-    response.raise_for_status()
-
-    return
-
-
-def gmail_message(message_id: str, creds: str):
-
-    service = build('gmail', 'v1', credentials=creds)
-    message = service.users().messages().get(userId='me', id=message_id, format='full').execute()
-
-    unread = 'UNREAD' in message['labelIds']
-
-    snippet = message['snippet']
-
-    to = message['payload']['headers'][0]['value']
-
-    s = str(message)
-
-    sender_first_index = s.index("{'name': 'From', 'value': '")+len("{'name': 'From', 'value': '")
-    sender_last_index = s.index('<', sender_first_index)
-    sender = s[sender_first_index:sender_last_index]
-
-    subject_first_index = s.index("{'name': 'Subject', 'value': '")+len("{'name': 'Subject', 'value': '")
-    subject_last_index = s.index("'", subject_first_index)
-    subject = s[subject_first_index:subject_last_index]
-
-    
-    return snippet, sender, to, subject, unread
-
-
-def mail() -> tuple[str, dict]:  # I would move it to function.py (maybe rename it to sql.py), but it would be a circular import
-    '''Returns str with all emails (example output in the function) and also a dictionary with emails id'''
-    """
-    # Example result:
-    1.1: *from*  # bold (text go as Markdown)
-    subject
-    _snippet_  # italic
-    —————————————————————
-    2.2: *from*
-    subject
-    _snippet_
-    =======================================
-    2.1: *from*
-    subject
-    _snippet_
-    """
-    result = str()
-    list_of_mail_lists  = gmail_list(max_results=15)
-    # {'messages': [{'id': 'str', 'threadId': 'str'}, ...], 'nextPageToken': 'str', 'resultSizeEstimate': int}
-    dict_of_unread = {}  # 1.1: <id>
-
-    for mail_list in list_of_mail_lists:
-
-        mail_index = list_of_mail_lists.index(mail_list)  # for numbering accounts
-        count_of_unread_message = 3  # unread -> read -> unread -> read -> read -> break
-        unread_messages = False  # To check if there are any unread messages at all
-
-        # In gmail_message, I need the creds variable, and since gmail_load_credentials returns a list of creds, we take the creds at index
-        creds = gmail_load_credentials()[mail_index]  
-
-        for message in mail_list['messages']:
+            if file_path.endswith('.pdf'):
+                text = pdf_to_text(file_path)
             
-            message_index = mail_list['messages'].index(message)
-            index = round(mail_index + message_index/10 + 1.1, 1)  # 0.0 -> 1.1, 0.1 -> 1.2. Without round 0.1+1.1 = 1.2000000000000002 
-
-            snippet, sender, to, subject, unread = gmail_message(message_id=message['id'], creds=creds)
-
-            if unread:
-                if unread_messages:  # do not add ————————————————————— before the first unread
-                    result += '\n' + "—"*21 + '\n'
-                result += f'{index}: *{sender}*\n{subject}\n_{snippet}_'
-                dict_of_unread[index] = message['id']
-                unread_messages = True
-
-            elif count_of_unread_message > 0:
-                count_of_unread_message -= 1
-
-            elif unread_messages:
-                if mail_index + 1 != len(list_of_mail_lists):
-                    result += '\n' + "="*33 + '\n'
-                break
+            elif file_path.endswith('.docx'):
+                text = docx_to_text(file_path)
+            
+            elif file_path.endswith('.mp3'):
+                text = speech_recognition(file_path)
 
             else:
-                break
-
-    if result == '':
-        result = 'No unread mail✅'
+                with open(file_path, 'r') as file:
+                    text = file.read()
+            
+            result += f'{file_path}:\n{text}\n\n'
+            
+        return result
     
-    print_colorama(f'Email count: {len(dict_of_unread)}')
-    return result, dict_of_unread
-
-
-# Google Calendar
-def calendar_get_events(start_time=D.today(), duration: int = 1) -> list:
-    '''Returns a list of all events from start_time to end_time. duration in days. By default will return today's events'''
-
-    end_time = start_time + duration * days
-    events = calendar[start_time:end_time:'startTime']
-
-    return [f'{event.summary}: {event.start} to {event.end}' for event in events]
+    except Exception as e:
+        print('file to text error:', e)
+        return f'Error reading {file_path}'
 
 
 
-def calendar_add_event(summary: str = '(No title)', start = D.today(), duration_in_hours: int = 24):
-    end = start + duration_in_hours * hours
-    event = Event(summary, start=start, end=end)
-    return calendar.add_event(event)
+# llm
+'''
+from groq import Groq
+groq_api_key = os.getenv('GROQ_API_KEY')
+groq_client = Groq(api_key=groq_api_key)
+'''
 
 
-# Todoist
-def todoist_get_tasks() -> list:
-    '''Returns a list of all todoist tasks, their date and id'''
-    tasks = todoist_api.get_tasks()
-    tasks_list = []
-    for task in tasks:
-        date = task.due.string if task.due else None
-        tasks_list.append(f'{task.content}, date: {date}, id: {task.id}')
-
-    return tasks_list
+def groq_api(messages: list, model: str = 'llama-3.1-70b-versatile') -> str:
+    # https://console.groq.com/docs/models
+    response = groq_client.chat.completions.create(
+        messages=messages,
+        model=model)
+        
+    return str(response.choices[0].message.content)
 
 
-def todoist_new_task(content: str, due_string: str | None = None) -> str:
-    '''Create new todoist task. Returns id. 
-    About due date: https://todoist.com/help/articles/introduction-to-due-dates-and-due-times-q7VobO'''
-    task = todoist_api.add_task(content=content, due_string=due_string)
-    return task.id
+import google.generativeai as genai
+import PIL.Image
+
+os.environ["GOOGLE_API_KEY"] = str(os.getenv("GOOGLE_API_KEY"))
+genai.configure(api_key=os.environ['GOOGLE_API_KEY'])
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 
-def todoist_close_task(task_id) -> bool:
-    '''Marks todoist tasks completed by id. Returns True if successful, otherwise False'''
-    return todoist_api.close_task(task_id=str(task_id))
+def genai_api(messages: list[dict] | str, file_paths: list | str = []) -> str:
+
+    if type(messages) == str:
+        user_message = messages
+        formatted_history = []
+
+    else:  # google is a bit special and to keep everything in the same style I do the transformation here.
+        user_message = messages[-1]['content']
+        history = messages[:-1]
+
+        formatted_history = []
+        for message in history:
+            role = 'user' if message['role'] in ['user', 'system'] else 'model' 
+            content = message['content']
+            formatted_history.append({"role": role, "parts": content})
+
+
+    if type(file_paths) == str:
+        file_paths = [file_paths]
+
+    
+    chat = model.start_chat(history=formatted_history)
+
+    files = []
+    for file_path in file_paths:
+        if file_path.endswith('.png') or file_path.endswith('.jpg') or file_path.endswith('.jpeg') or file_path.endswith('.webp'):
+            files.append(PIL.Image.open(file_path))
+
+        else:
+            user_message += files_to_text(file_path)
+
+
+    if file_paths:
+        response = chat.send_message([user_message] + files)
+
+    else:
+        response = chat.send_message(user_message)
+
+
+    return response.text
+
+
+def llm_api(messages: list[dict], files: str | list = [], provider: Literal['groq', 'google'] = 'google'):
+
+    if provider == 'google' or files:
+        try:
+            return genai_api(messages, files)
+        except Exception as e:
+            print('llm_api error', e)
+            return groq_api(messages)
+    
+    else:
+        return groq_api(messages)
 
 
 
 # wolfram alpha
-async def download_image_async(url: str, filename: str):
-    '''Asynchronously download an image from a URL. Returns path to image or False'''
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=60) as response:
-            
-            if response.status == 200:
-                async with aiofiles.open(filename, 'wb') as file:
-                    await file.write(await response.read())
+import requests
+import re
 
-                full_path = os.path.abspath(filename)
-                return full_path
-            
-            else:
-                return False
-            
+WOLFRAM_SIMPLE_API = os.getenv('WOLFRAM_SIMPLE_API_KEY')
+WOLFRAM_SHOW_STEPS_RESULT = os.getenv('WOLFRAM_SHOW_STEPS_RESULT')
 
-def wolfram_quick_answer(text: str) -> str:
-    '''Return wolfram short answer (asynchronously)'''
+# TODO: remake prompt, add an interpreter
+prompt_for_transform_query_wolfram = """You have to turn a user query into a query that wolfram alpha will understand (If the enquiry is normal, leave it that way).
+
+Examples:
+
+1. User: Use wolfram alpha and solve this equation 3x-1=11
+   You: 3x-1=11
+
+2. User: Solve 3x^2-7x+4=0
+   You: Solve 3x^2-7x+4=0
+
+3. User: {sqrt2}}^{sqrt{2}
+   You: sqrt[2]^sqrt[2]
+
+4. User: Slve 2x^2=16
+   You: Solve 2x^2=16
+
+5. User: Help me and do the math (567^34)/435-6758
+   You: (567^34)/435-6758
+
+6. User: Sum of roots 8x^3-4x^2+11x-36=0
+   You: Sum of roots 8x^3-4x^2+11x-36=0
+
+7. User: Use wolfram alpha to find the population of France
+   You: France population
+
+
+Also wolfram alpha only accepts the English language
+
+8. User: x в кубе равно 8
+   You: x^3=8
+
+9. User: 14x meno 5 uguale 0
+   You: 14x-5=0
+
+10. User: Calculer 456^45
+   You: Calculate 456^45
+
+
+Now, respond to the query by following the rules
+"""
+
+
+def calculator(expression: str) -> str:
+    try:
+        expression = expression.replace('^', '**')
+        print('calculator:', expression)
+        return str(eval(expression))
+    
+    except Exception as e:
+        return f"Calculator error: {e}"
+    
+    
+def download_image(url: str) -> str:
+    'Downloads the image from the link. Returns the name of the downloaded image (name is time).'
+    response = requests.get(url)
+    file_name = f'{datetime.now().strftime("%d%m%Y_%H%M%S%f")}.png'
+    with open(file_name, 'wb') as file:
+        file.write(response.content)
+    return file_name
+
+
+def wolfram_short_answer_api(text: str) -> str:
+    'https://products.wolframalpha.com/short-answers-api/documentation'
     query = quote(text)
-    return requests.get(f'https://api.wolframalpha.com/v1/result?appid={WOLFRAM_SIMPLE_API}&i={query}').text
+    url = f'https://api.wolframalpha.com/v1/result?appid={WOLFRAM_SIMPLE_API}&i={query}'
+    return requests.get(url).text
 
 
-async def wolfram_simple_answer(text: str) -> str | bool:
-    '''Return link to wolfram simple answer (asynchronously)'''
+def wolfram_llm_api(text: str) -> tuple[str, list]:
+    'https://products.wolframalpha.com/llm-api/documentation - text version of the WolframAlpha page answer. Returns the text and a list of links to images'
+    query = quote(text)
+    url = f'https://www.wolframalpha.com/api/v1/llm-api?input={query}&appid={WOLFRAM_SHOW_STEPS_RESULT}'
+    answer = requests.get(url).text
+    
+    answer = answer[:answer.find('Wolfram|Alpha website result for "')]
+    links = re.findall(r'https?://\S+', answer)
+    answer = re.sub(r'https?://\S+', 'Images will be attached to the answer', answer)
+    return answer, links
+
+
+def wolfram_simple_api(text: str) -> str:
+    'https://products.wolframalpha.com/simple-api/documentation - WolframAlpha answer page image'
     query = quote(text)
     link = f'https://api.wolframalpha.com/v1/simple?appid={WOLFRAM_SIMPLE_API}&i={query}%3F'
-
-    filename = f"wolfram_simple_answer-{datetime.now().strftime('%Y%m%d_%H%M%S%f')}.png"
-    path = await download_image_async(link, filename)
-
-    print_colorama(str(path))
-
-    return str(path)
+    return download_image(link)
 
 
-async def wolfram_step_by_step(text: str) -> tuple[str, list]:
-    '''Returns a step by step solution in the form of a string and a list of picture links (asynchronously)'''
-    query = quote(text)
-    url = f'https://api.wolframalpha.com/v1/query?appid={WOLFRAM_SHOW_STEPS_API}&input={query}&podstate=Step-by-step%20solution'
+def wolfram_short_answer(query: str) -> str:
+    'Short answer from WolframAlpha'
+    quick_answer = wolfram_short_answer_api(query)
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            content = await response.text()
-            soup = BeautifulSoup(content, "xml")
+    if 'Wolfram|Alpha did not understand' in quick_answer:
+        print(f'wolfram_alpha_short_answer: Wolfram Alpha did not understand {query}. Ask llm')
+        messages = [
+            {'role': 'user', 'content': prompt_for_transform_query_wolfram},
+            {'role': 'user', 'content': query}
+        ]
+        query = groq_api(messages=messages, model='llama3-8b-8192')
+        quick_answer = wolfram_short_answer_api(query)
 
-            subpods = soup.find_all("subpod", {"title": "Possible intermediate steps"})
-            
-            step_images = []
-            step_plain = ''
-
-            for subpod in subpods:
-                img_tag = subpod.find("img")
-                if img_tag:
-                    step_resp_img = img_tag.get("src")
-                    step_images.append(step_resp_img)
-                
-                plain_tag = subpod.find('plaintext')
-                step_resp = plain_tag.get_text('\n', strip=True)
-                step_resp = step_resp.replace('Answer: | \n |', '\nAnswer:\n') if plain_tag else False
-                if step_resp:
-                    step_plain += step_resp + '\n\n'
-            
-            nw = datetime.now().strftime('%Y%m%d_%H%M%S%f')
-            downloaded_image_paths = await asyncio.gather(*[download_image_async(url, f'wolfram_step_by_step-{nw}-{i}.png') for i, url in enumerate(step_images)])
-
-            print_colorama(f'{url}, images: {step_images}')
-            return step_plain, downloaded_image_paths
+    print(f'wolfram_alpha_short_answer: {quick_answer}')
+    return quick_answer
 
 
-async def ask_wolfram_alpha(text: str) -> tuple[str, list]:
-    '''Asynchronous function. Returns quick response, step by step solution text and downloaded image paths (simple(page) and step by step)'''
-    # all three queries take 2 seconds
+def wolfram_full_answer(text: str):  # TODO: async
+    'returns the text version of the answer sheet, the image links and the answer sheet as a picture'
 
-    quick_answer = wolfram_quick_answer(text)
+    full_answer, full_answer_images = wolfram_llm_api(text)
 
-    if 'Wolfram|Alpha did not understand your input' in quick_answer:
-        print(f'ask_wolfram_alpha: Wolfram|Alpha did not understand {text}. Ask llm')
+    if 'Alpha did not understand your input' in full_answer:
+        print(f'wolfram_alpha_full_answer: Wolfram Alpha did not understand {text}. Ask llm')
         messages = [
             {'role': 'user', 'content': prompt_for_transform_query_wolfram},
             {'role': 'user', 'content': text}
         ]
-        text = llm_api(messages=messages)
-        quick_answer = wolfram_quick_answer(text)
-
-    simple_answer_task = asyncio.create_task(wolfram_simple_answer(text))
-    step_by_step_task = asyncio.create_task(wolfram_step_by_step(text))
-
-    simple_answer_link = await simple_answer_task
-    step_by_step_solution, step_images = await step_by_step_task
-
-    images = [image for image in step_images if image]
-    if simple_answer_link:
-        images.insert(0, simple_answer_link)
+        text = groq_api(messages=messages, model='llama3-8b-8192')
+        
+        full_answer, full_answer_images = wolfram_llm_api(text)
+        
+    images = full_answer_images # [wolfram_simple_api(text)] + full_answer_images 
     
-    print_colorama(text)
-    return quick_answer, images
+    return full_answer, images
 
 
 
-# Tavily. https://tavily.com/
-async def tavily_qsearch(text: str) -> tuple[str, list[str]]:
-    '''Asynchronous function. Returns a short answer on the topic using the internet, photos and urls. (include_answer=True, max_results=0)'''
-    response = tavily_client.search(query=text, search_depth='basic', include_answer=True, include_images=True, max_results=0)
-    answer = response['answer']
-    images_url = response['images']
-    nw = datetime.now().strftime('%Y%m%d_%H%M%S%f')
-    downloaded_images = await asyncio.gather(*[download_image_async(url, f'tavily_qsearch-{nw}-{i}.png') for i, url in enumerate(images_url)])
-    images = [image for image in downloaded_images if image]
-    print_colorama(f'answer: {answer}, images: {images}')
-    return answer, images
+# internetfrom tavily import TavilyClient
+from tavily import TavilyClient
+from duckduckgo_search import DDGS
+from deep_translator import GoogleTranslator
+
+tavily_client = TavilyClient(api_key=os.getenv('TAVILY_API_KEY'))
+# TODO: google, ggcs translator, detect language
 
 
-async def tavily_full_search(text: str, max_results: int = 3):
-    '''Asynchronous function. Returns text from multiple pages on a web request (include_raw_content=True) and photos'''
-    response = tavily_client.search(query=text, search_depth='advanced', include_raw_content=True, include_images=True, max_results=max_results)
-    results = response['results']
-    images_url = response['images']
-    nw = datetime.now().strftime('%Y%m%d_%H%M%S%f')
-    downloaded_images = await asyncio.gather(*[download_image_async(url, f'tavily_qsearch-{nw}-{i}.png') for i, url in enumerate(images_url)])
-    images = [image for image in downloaded_images if image]
-    print_colorama(f'{results}, {images}')
-
-    return results, images
-
-
-async def hugging_face_flux(prompt: str, seed: int = 0, randomize_seed: bool = True, width: int = 1024, height: int = 1024, guidance_scale: float = 3.5, num_inference_steps: int = 28) -> tuple[str | None, int | None]:
-    # TODO: add user limits and possibly multiple hugging face accounts 
-    attempts = 3
-
-    if not 0 <= seed <= 2**31-1:
-        seed = 0
-
-    if not 256 <= width <= 2048:
-        width = 1024
-
-    if not 256 <= height <= 2048:
-        height = 1024
-
-    if not 1 <= guidance_scale <= 15:
-        guidance_scale = 3.5
-
-    if not 1 <= num_inference_steps <= 50:
-        num_inference_steps = 28
-
-    for _ in range(attempts):
-        try:
-            result = hugging_face_flux_client.predict(
-                prompt=prompt,
-                seed=seed,
-                randomize_seed=randomize_seed,
-                width=width,
-                height=height,
-                guidance_scale=guidance_scale,
-                num_inference_steps=num_inference_steps
-            )
-            path = result[0]
-            seed = result[1]
-            result = f'Image successfully generated and will be sent to the user. \nPrompt: `{prompt}`\nSeed: `{seed}`'
-            break
-        except Exception as e:
-            path = None
-            result = f'Error: {e}. Don\'t lie to the user and let them know about the error and when they can use it (or tell them to contact admin)'
-            print_colorama(color='RED', text=f'Error: {e}')
-            
-
-    return result, path
-
-    
-def detect_language(text: str) -> str:
+def parsing(links: str | list) -> str:
     try:
-        return detectlanguage.simple_detect(text)
-    except:
-        return 'en'
-
-
-def translate(text: str, target_language: str = 'en', source_language: str = 'auto') -> str:
-    result = str()
-
-    for i in range(int(len(text)/4900+1)): # google translate doesn't translate more than 5000 characters, but I'll take a margin of safety.
-        result += GoogleTranslator(source=source_language, target=target_language).translate(text[4900*i:4900*(i+1)])
-
-    return result
-
-
-async def get_report(query: str, report_type: str) -> str:
-    researcher = GPTResearcher(query=query, report_type=report_type)
-    await researcher.conduct_research()
-    report = await researcher.write_report()
-    return report
-
-
-async def gpt_research(query: str, trans: bool = True) -> str:
-
-    if trans:
-        source_language = detect_language(query)
-        query = translate(text=query, target_language = 'en', source_language=source_language)
-        print(f'gpt_resarch translate query("{source_language}") to {query}')
-        
-    report = await get_report(query, "research_report")
+        responce = tavily_client.extract(urls=links)
+        return [r['raw_content'] for r in responce['results']]
     
-    if trans and source_language != 'en':
-        report = translate(text=report, target_language = source_language)
-        
-    return report
+    except Exception as e:
+        print(e)
+        if type(links) == str:
+            links = [links]
+        result = ''
+        for link in links:
+            try:
+                responce = tavily_client.extract(urls=link)
+                result += f'{link}: {responce["result"][0]["raw_content"]}\n'
+            except:
+                result += f'{link}: Error when extracting text\n'
+
+        return result
+    
+
+def DDGS_answer(text: str) -> str:
+    'A short answer like Google. Sometimes nothing comes up. But mostly the answer comes from wikipedia.'
+    try:
+        response = DDGS().answers(text)[:3]
+        return '\n'.join([r["text"] for r in response])
+    except:
+        return ''
+    
+
+def tavily_answer(query: str):
+    response = tavily_client.qna_search(query=query)
+    return response
+
+
+def tavily_get_context(query: str, topic = 'news') -> str:
+    return tavily_client.get_search_context(query=query, topic=topic).replace('\\', '')
+
+
+def tavily_content(text: str, max_results: int = 4):
+    response = tavily_client.search(query=text, search_depth='basic', max_results=max_results)['results']
+    results = ''
+    for r in response:
+        results += f'{r["url"]}: {r["content"]}\n'
+
+    return results
+
+
+prompt_for_sum = f"""You are a precise summarization expert. Your task is to create a clear and relevant summary based on the provided text and query.
+
+Context: I will provide you with:
+1. Query: A specific question or topic of interest
+2. Source text: Content from a webpage or document or a collection of several responses
+
+Ignore unnecessary information and answer the query well.
+"""
+
+
+def sum_page(link: str, query: str) -> str:
+    prompt = prompt_for_sum + f'\n\nQuery:\n{query}\n\nSource text:\n{parsing(link)}'  # TODO: parser error
+    messages = [{"role": "user", "content": prompt}]
+    try:
+        llm_answer = llm_api(messages=messages, provider='groq')
+    except:
+        print(len(str(messages)))
+        llm_answer = 'Error'
+
+    return f'{link}: {llm_answer}\n\n\n'
+
+
+def google_short_answer(text: str) -> str:
+    resp = DDGS_answer(text)
+    final_answer = resp if resp else tavily_answer(text)
+    print('google_short_answer', final_answer)
+    return final_answer
+    
+
+def google_full_answer(text: str, max_results: int = 2):  # TODO: async, for lyrics
+    links = [i['href'] for i in DDGS().text(text, max_results=max_results)]
+
+    
+    sum_answers = ''
+    for link in links:
+        print('start sum from', link)
+        sum_answers += sum_page(link=link, query=text)  # TODO: max_result excluding parsing error
+
+    prompt = prompt_for_sum + f"""Summarize the text above in a concise and relevant way. Ensure that the summary is well-organized and captures the main points of the text. The summary should be based on the query and the provided text. If the text is not relevant to the query, please provide a summary that is not relevant to the query. Source text will be composed of several responses. Write the final text"""
+    prompt +=  f'\n\nQuery:\n{text}\n\nSource text:\n{sum_answers}'
+    
+    final_messages = [{"role": "user", "content": prompt}]
+    final_answer = llm_api(messages=final_messages, provider='groq')
+    print('google_full_answer', final_answer)
+    return final_answer
+
+
+def google_news(text: str):
+    news_content = tavily_get_context(text)
+    
+    prompt = prompt_for_sum + f"""Turn all these texts into one\n\nQuery:\n{text}\n\nSource text:\n{news_content}"""
+
+    final_messages = [{"role": "user", "content": prompt}]
+    final_answer = llm_api(messages=final_messages, provider='groq')
+
+    print('google_news', final_answer)
+
+    return final_answer
