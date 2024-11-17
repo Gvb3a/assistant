@@ -13,3 +13,4 @@ token_*.json
 
 tts_*
 *.ipynb
+*.log

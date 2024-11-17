@@ -3,7 +3,7 @@ from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.types import Message, FSInputFile, InputMediaPhoto
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import default_state, State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
+from colorama import Fore, Style, init
 
 import os
 
@@ -12,17 +12,19 @@ from datetime import datetime
 
 
 if __name__ == '__main__' or '.' not in __name__:
-    from api import speech_recognition, llm_api
+    from api import speech_recognition, llm_api, files_to_text
     from llm_answer import system_prompt, llm_select_tool, llm_use_tool
     from sql import sql_check_user, sql_select_history, sql_insert_message
+    from log import log
 else:
-    from .api import speech_recognition, llm_api
+    from .api import speech_recognition, llm_api, files_to_text
     from .llm_answer import system_prompt, llm_select_tool, llm_use_tool
     from .sql import sql_check_user, sql_select_history, sql_insert_message
+    from .log import log
     
 
 load_dotenv()
-
+init()
 
 bot_token = os.getenv('BOT_TOKEN')
 # TODO: admin id
@@ -67,11 +69,12 @@ async def message_handler(message: Message, state: FSMContext) -> None:
     temp_message_text = ['Selecting tool - 🔍', 'Using the tool - ⚙️', 'Generating response - 🤖']
     temp_message_id = message_id + 1
 
+    files = []
 
     if message.voice:
         await message.reply('Recognizing audio...')
         file_name = await download_file_for_id(file_id=message.voice.file_id, extension='mp3')
-
+        
         text = speech_recognition(file_name=file_name).strip()
         os.remove(file_name)
         
@@ -79,19 +82,53 @@ async def message_handler(message: Message, state: FSMContext) -> None:
         await bot.edit_message_text(chat_id=chat_id, message_id=temp_message_id, text=f'Recognized: {text}')
 
         temp_message_id += 1
-        
-    else:
+    
+    elif message.photo:
+        await message.reply('Every time you ask a new image question, you will have to submit the image again.')
+        file_id = message.photo[-1].file_id
+        file = await bot.get_file(file_id)
+        file_path = file.file_path
+        file_name = file.file_path.split('/')[-1]
+        await bot.download_file(file_path, file_name)
+
+        files = [file_name]
+
+        text = str(message.caption) if message.caption else 'Describe the image'
+
+        temp_message_id += 1
+
+    elif message.document:
+        await message.reply('Every time you ask a new document question, you will have to submit the document again.')
+        file_id = message.document.file_id
+        file = await bot.get_file(file_id)
+        file_path = file.file_path
+        file_name = file.file_path.split('/')[-1]
+        await bot.download_file(file_path, file_name)
+
+        files = [file_name]
+
+        text = str(message.caption) if message.caption else 'Describe the document'
+
+        temp_message_id += 1
+
+    if message.text:
         text = str(message.text)
     
     await message.reply('\n'.join(temp_message_text))
 
-    print(f'{text} by {user}')
 
     messages = sql_select_history(id=user_id)
     messages.insert(0, {'role': 'system', 'content': system_prompt})
     messages.append({'role': 'user', 'content': text})
+    
+    for file in files:
+        if not(file.endswith('.png') or file.endswith('.jpg') or file.endswith('.jpeg') or file.endswith('.webp')):
+            messages[-1]['content'] += f'\n\n{file}:\n{files_to_text(file)}'
+            files.remove(file)
 
-    tools = llm_select_tool(messages=messages)
+    log(f'new message by {user}. messages: {text}, files: {files}')
+
+    tools = llm_select_tool(messages=messages, files=files)
     temp_message_text[0] = temp_message_text[0][:-2] + '✅'
     await bot.edit_message_text(chat_id=chat_id, message_id=temp_message_id, text='\n'.join(temp_message_text))
 
@@ -107,27 +144,22 @@ async def message_handler(message: Message, state: FSMContext) -> None:
         messages.append({'role': 'system', 'content': 'tool result:\n' + tool_result})
         sql_insert_message(user_id=user_id, role='system', content='tool result:\n' + tool_result)
         
-
-    answer = llm_api(messages=messages, provider='groq')
+    answer = llm_api(messages=messages, files=files, provider='google')
     await bot.delete_message(chat_id=chat_id, message_id=temp_message_id)
-
+    log(f'answer to {user}({text}): {answer}')
     sql_insert_message(user_id=user_id, role='assistant', content=answer)
 
+    files += images
     images = images[:9]
     if images:
         media_group = []
         for image in images:
             caption = answer[:1000] if images is images[0] else None
+            media = image if image.startswith('https:') else FSInputFile(image)
             try:
-                if image.startswith('https:'):
-                    media_group.append(InputMediaPhoto(media=image, caption=caption, parse_mode='Markdown'))
-                else:
-                    media_group.append(InputMediaPhoto(media=FSInputFile(image), caption=caption, parse_mode='Markdown'))
+                media_group.append(InputMediaPhoto(media=media, caption=caption, parse_mode='Markdown'))
             except:
-                if image.startswith('https:'):
-                    media_group.append(InputMediaPhoto(media=image, caption=caption))
-                else:
-                    media_group.append(InputMediaPhoto(media=FSInputFile(image), caption=caption))
+                media_group.append(InputMediaPhoto(media=media, caption=caption))
 
         await message.answer_media_group(media=media_group)
         answer = answer[:1000]
@@ -143,8 +175,9 @@ async def message_handler(message: Message, state: FSMContext) -> None:
             await message.answer(answer[:4000])
         answer = answer[4000:]
 
-
-        
+    for file in files:
+        if not file.startswith('https:'):
+            os.remove(file.split('/')[-1])    
     await state.clear()
 
 
@@ -155,5 +188,5 @@ async def message_processing(message: Message):
 
 
 if __name__ == '__main__':
-    print(f'Bot is launched') 
+    log('Bot is launched')
     dp.run_polling(bot)

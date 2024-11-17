@@ -1,7 +1,7 @@
 import sqlite3
 from typing import Literal
 from datetime import datetime, timezone
-
+from log import log
 
 def utc_time():
     # Get the current time in UTC + 0
@@ -37,8 +37,6 @@ def sql_launch():
         ''')
     
     # TODO: settings
-    
-    print(f'sql_launch')
 
     connection.commit()
     connection.close()
@@ -50,7 +48,7 @@ def sql_check_user(telegram_name: str, telegram_username: str, user_id: int):
     
     user = cursor.execute('SELECT * FROM Users WHERE user_id = ?', (user_id, )).fetchone()
     if user is None:
-        print(f'sql_check_user: new user {user_id}')
+        log(f'new user {telegram_name} {telegram_username} {user_id}')
         time = utc_time()
         cursor.execute('INSERT INTO Users (telegram_name, telegram_username, user_id, number_of_messages, first_message, last_message) VALUES (?, ?, ?, ?, ?, ?)', (telegram_name, telegram_username, user_id, 1, time, time))
 
@@ -61,13 +59,12 @@ def sql_check_user(telegram_name: str, telegram_username: str, user_id: int):
     connection.close()
 
 
-def sql_select_history(id: int, n: int | str = 6):
+def sql_select_history(id: int, n: int | str = 5):
     ''
     connection = sqlite3.connect('assistant.db') 
     cursor = connection.cursor()
 
-    role_content = cursor.execute('SELECT role, content FROM Messages WHERE user_id = ? ORDER BY time LIMIT ?', (id, n)).fetchall()
-    
+    role_content = cursor.execute('SELECT role, content FROM Messages WHERE user_id = ? ORDER BY time DESC LIMIT ? ', (id, n)).fetchall()    
     connection.close()
     
     return [{'role': i[0], 'content': i[1]} for i in role_content]

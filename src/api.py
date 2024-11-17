@@ -7,14 +7,20 @@ from datetime import datetime
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from typing import Literal
+from colorama import Fore, Style, init
+import asyncio
 
+if __name__ == '__main__' or '.' not in __name__:
+    from log import log
+else:
+    from .log import log
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 path = '\\'.join(os.path.dirname(os.path.abspath(__file__)).split('\\')[:-1])
 
 
 
-# pdf, docx, mp3 to text. TODO: summary in large document
+# pdf, docx, mp3 to text. TODO: summary in large document (or embbeding)
 import PyPDF2
 import docx
 from groq import Groq
@@ -31,7 +37,7 @@ def speech_recognition(file_name: str) -> str:  # TODO: local_whisper
         model="whisper-large-v3")
         
         text = translation.text
- 
+    
     return str(text).strip()
 
 
@@ -84,7 +90,7 @@ def files_to_text(files: list | str) -> str:
         return result
     
     except Exception as e:
-        print('file to text error:', e)
+        log(e, error=True)
         return f'Error reading {file_path}'
 
 
@@ -143,8 +149,7 @@ def genai_api(messages: list[dict] | str, file_paths: list | str = []) -> str:
             files.append(PIL.Image.open(file_path))
 
         else:
-            user_message += files_to_text(file_path)
-
+            user_message += '\n\n' + file_path + ':\n' + files_to_text(file_path)
 
     if file_paths:
         response = chat.send_message([user_message] + files)
@@ -156,17 +161,26 @@ def genai_api(messages: list[dict] | str, file_paths: list | str = []) -> str:
     return response.text
 
 
-def llm_api(messages: list[dict], files: str | list = [], provider: Literal['groq', 'google'] = 'google'):
+def llm_api(messages: list[dict], files: str | list = [], provider: Literal['groq', 'google'] = 'groq'):
 
+    if type(files) == str:
+        files = [files]
+        
+    start_time = datetime.now()
+    
     if provider == 'google' or files:
         try:
-            return genai_api(messages, files)
+            answer = genai_api(messages, files)
         except Exception as e:
-            print('llm_api error', e)
-            return groq_api(messages)
+            log(f'google error: {e}', error=True)
+            answer = groq_api(messages)
     
     else:
-        return groq_api(messages)
+        answer = groq_api(messages)
+
+    log(f'answer: {answer}, messages: {messages}, files: {files}, provider: {provider}, time: {datetime.now()-start_time}')
+
+    return answer
 
 
 
@@ -223,7 +237,7 @@ Now, respond to the query by following the rules
 def calculator(expression: str) -> str:
     try:
         expression = expression.replace('^', '**')
-        print('calculator:', expression)
+        log(expression)
         return str(eval(expression))
     
     except Exception as e:
@@ -233,9 +247,10 @@ def calculator(expression: str) -> str:
 def download_image(url: str) -> str:
     'Downloads the image from the link. Returns the name of the downloaded image (name is time).'
     response = requests.get(url)
-    file_name = f'{datetime.now().strftime("%d%m%Y_%H%M%S%f")}.png'
+    file_name = f'{hash(url)}.png'
     with open(file_name, 'wb') as file:
         file.write(response.content)
+    log(file_name)
     return file_name
 
 
@@ -243,7 +258,9 @@ def wolfram_short_answer_api(text: str) -> str:
     'https://products.wolframalpha.com/short-answers-api/documentation'
     query = quote(text)
     url = f'https://api.wolframalpha.com/v1/result?appid={WOLFRAM_SIMPLE_API}&i={query}'
-    return requests.get(url).text
+    answer = requests.get(url).text
+    log(answer)
+    return answer
 
 
 def wolfram_llm_api(text: str) -> tuple[str, list]:
@@ -255,6 +272,7 @@ def wolfram_llm_api(text: str) -> tuple[str, list]:
     answer = answer[:answer.find('Wolfram|Alpha website result for "')]
     links = re.findall(r'https?://\S+', answer)
     answer = re.sub(r'https?://\S+', 'Images will be attached to the answer', answer)
+    log(f'{answer}, {links}')
     return answer, links
 
 
@@ -262,7 +280,9 @@ def wolfram_simple_api(text: str) -> str:
     'https://products.wolframalpha.com/simple-api/documentation - WolframAlpha answer page image'
     query = quote(text)
     link = f'https://api.wolframalpha.com/v1/simple?appid={WOLFRAM_SIMPLE_API}&i={query}%3F'
-    return download_image(link)
+    file_name = download_image(link)
+    log(file_name)
+    return file_name
 
 
 def wolfram_short_answer(query: str) -> str:
@@ -270,7 +290,7 @@ def wolfram_short_answer(query: str) -> str:
     quick_answer = wolfram_short_answer_api(query)
 
     if 'Wolfram|Alpha did not understand' in quick_answer:
-        print(f'wolfram_alpha_short_answer: Wolfram Alpha did not understand {query}. Ask llm')
+        log(f'Wolfram Alpha did not understand {query}. Ask llm', error=True)
         messages = [
             {'role': 'user', 'content': prompt_for_transform_query_wolfram},
             {'role': 'user', 'content': query}
@@ -278,17 +298,17 @@ def wolfram_short_answer(query: str) -> str:
         query = groq_api(messages=messages, model='llama3-8b-8192')
         quick_answer = wolfram_short_answer_api(query)
 
-    print(f'wolfram_alpha_short_answer: {quick_answer}')
+    log(quick_answer)
     return quick_answer
 
 
-def wolfram_full_answer(text: str):  # TODO: async
+def wolfram_full_answer(text: str):  # TODO: async + wolfram_simple_api
     'returns the text version of the answer sheet, the image links and the answer sheet as a picture'
 
     full_answer, full_answer_images = wolfram_llm_api(text)
 
     if 'Alpha did not understand your input' in full_answer:
-        print(f'wolfram_alpha_full_answer: Wolfram Alpha did not understand {text}. Ask llm')
+        log(f'Wolfram Alpha did not understand {text}. Ask llm', error=True)
         messages = [
             {'role': 'user', 'content': prompt_for_transform_query_wolfram},
             {'role': 'user', 'content': text}
@@ -297,8 +317,8 @@ def wolfram_full_answer(text: str):  # TODO: async
         
         full_answer, full_answer_images = wolfram_llm_api(text)
         
-    images = full_answer_images # [wolfram_simple_api(text)] + full_answer_images 
-    
+    images = full_answer_images # TODO: [wolfram_simple_api(text)] + full_answer_images 
+    log(f'{full_answer}, {images}')
     return full_answer, images
 
 
@@ -309,7 +329,7 @@ from duckduckgo_search import DDGS
 from deep_translator import GoogleTranslator
 
 tavily_client = TavilyClient(api_key=os.getenv('TAVILY_API_KEY'))
-# TODO: google, ggcs translator, detect language
+# TODO: ggcs translator, detect language
 
 
 def parsing(links: str | list) -> str:
@@ -318,7 +338,6 @@ def parsing(links: str | list) -> str:
         return [r['raw_content'] for r in responce['results']]
     
     except Exception as e:
-        print(e)
         if type(links) == str:
             links = [links]
         result = ''
@@ -329,7 +348,8 @@ def parsing(links: str | list) -> str:
             except:
                 result += f'{link}: Error when extracting text\n'
 
-        return result
+    log(f'{links}, {result}')
+    return result
     
 
 def DDGS_answer(text: str) -> str:
@@ -339,7 +359,12 @@ def DDGS_answer(text: str) -> str:
         return '\n'.join([r["text"] for r in response])
     except:
         return ''
-    
+
+
+def DDGS_images(text: str, max_results: int = 9) -> list[str]:
+    images = [i['image'] for i in DDGS().images(text, max_results=max_results)]
+    return images
+
 
 def tavily_answer(query: str):
     response = tavily_client.qna_search(query=query)
@@ -374,9 +399,11 @@ def sum_page(link: str, query: str) -> str:
     messages = [{"role": "user", "content": prompt}]
     try:
         llm_answer = llm_api(messages=messages, provider='groq')
-    except:
-        print(len(str(messages)))
+        log(llm_answer)
+    except Exception as e:
+        l = len(str(messages))
         llm_answer = 'Error'
+        log(f'{e}. len: {l}', error=True)
 
     return f'{link}: {llm_answer}\n\n\n'
 
@@ -384,7 +411,7 @@ def sum_page(link: str, query: str) -> str:
 def google_short_answer(text: str) -> str:
     resp = DDGS_answer(text)
     final_answer = resp if resp else tavily_answer(text)
-    print('google_short_answer', final_answer)
+    log(final_answer)
     return final_answer
     
 
@@ -394,7 +421,6 @@ def google_full_answer(text: str, max_results: int = 2):  # TODO: async, for lyr
     
     sum_answers = ''
     for link in links:
-        print('start sum from', link)
         sum_answers += sum_page(link=link, query=text)  # TODO: max_result excluding parsing error
 
     prompt = prompt_for_sum + f"""Summarize the text above in a concise and relevant way. Ensure that the summary is well-organized and captures the main points of the text. The summary should be based on the query and the provided text. If the text is not relevant to the query, please provide a summary that is not relevant to the query. Source text will be composed of several responses. Write the final text"""
@@ -402,7 +428,7 @@ def google_full_answer(text: str, max_results: int = 2):  # TODO: async, for lyr
     
     final_messages = [{"role": "user", "content": prompt}]
     final_answer = llm_api(messages=final_messages, provider='groq')
-    print('google_full_answer', final_answer)
+    log(final_answer)
     return final_answer
 
 
@@ -414,6 +440,65 @@ def google_news(text: str):
     final_messages = [{"role": "user", "content": prompt}]
     final_answer = llm_api(messages=final_messages, provider='groq')
 
-    print('google_news', final_answer)
-
+    log(final_answer)
     return final_answer
+
+
+
+import aiohttp
+import asyncio
+import os
+
+async def download_image(session, url, save_path):
+    """Скачивает одно изображение по URL."""
+    try:
+        async with session.get(url) as response:
+            if response.status == 200:
+                # Сохраняем изображение на диск
+                with open(save_path, 'wb') as file:
+                    file.write(await response.read())
+                return save_path
+            else:
+                print(f"Failed to download {url}: HTTP {response.status}")
+    except Exception as e:
+        print(f"Error downloading {url}: {e}")
+
+
+async def download_images(image_urls, save_dir):
+    """
+    Скачивает изображения по списку URL-адресов и сохраняет их в указанную директорию.
+    
+    :param image_urls: список URL изображений.
+    :param save_dir: директория для сохранения изображений.
+    """
+    os.makedirs(save_dir, exist_ok=True)  # Создаем папку, если её нет
+    
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        for i, url in enumerate(image_urls):
+            # Генерируем имя файла для каждого изображения
+            try:
+                save_path = os.path.join(save_dir, f"image_{i + 1}.jpg")
+                tasks.append(download_image(session, url, save_path))
+            except:
+                pass
+        
+        # Асинхронно скачиваем все изображения
+        return await asyncio.gather(*tasks)
+
+
+async def google_image(text, max_results=9, download_image=True):
+    urls = DDGS_images(text, max_results=max_results)
+    start_time = datetime.now()
+    
+
+    if not download_image:
+        log(urls)
+        return f'google_image: The {len(urls)} of images on the {text} query will be prefixed to your response', urls
+
+    
+    file_paths = await download_images(urls, 'images')
+    
+    log(f'{file_paths}, {datetime.now()-start_time}')
+    return f'The {len(file_paths)} of the {text} query images will be appended to the response. Answer other user questions, tell information about the query, or say something like images found. ', file_paths
+

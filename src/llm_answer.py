@@ -3,10 +3,12 @@ from typing import Literal
 import asyncio
 
 if __name__ == '__main__' or '.' not in __name__:
-    from api import llm_api, calculator, wolfram_short_answer, wolfram_full_answer, google_short_answer, google_full_answer
+    from api import llm_api, calculator, wolfram_short_answer, wolfram_full_answer, google_short_answer, google_full_answer, google_image
+    from log import log
 
 else:
-    from .api import llm_api, calculator, wolfram_short_answer, wolfram_full_answer, google_short_answer, google_full_answer
+    from .api import llm_api, calculator, wolfram_short_answer, wolfram_full_answer, google_short_answer, google_full_answer, google_image
+    from .log import log
 
 
 system_prompt = 'You are a helpful assistant with access to Wolfram Alpha, Google, and calucaltor. You are a Telegram bot (don\'t use LaTeX) providing the best answers.'
@@ -14,10 +16,6 @@ system_prompt = 'You are a helpful assistant with access to Wolfram Alpha, Googl
 
 # TODO: let him decide for himself, not based on a machine solution.
 functions_description = {
-   'calculator': {
-        'description': 'For simple calculations (use Python syntax, e.g., ^ as **, decimal point for fractional numbers)',
-        'output_file': False
-    },
     'wolfram_short_answer': {
         'description': 'For complex calculations, solving equations, or using specific WolframAlpha features (e.g., weather, exchange rates, today date, sometimes full-fledged tasks if you set the prompt well and etc). Use in most cases',
         'output_file': False
@@ -31,7 +29,11 @@ functions_description = {
         'output_file': False
     },
     'google_full_answer': {
-        'description': 'For queries needing full-text information from the internet (e.g., entire lyrics or detailed articles).',
+        'description': 'For queries needing full-text information from the internet (e.g., entire lyrics or detailed articles). Don\'t use it for information you know.',
+        'output_file': False
+    },
+    'google_image': {
+        'description': 'Pictures that pop up when you search. Use when the user asks to find a picture',
         'output_file': True
     }
 }
@@ -53,20 +55,21 @@ You can call multiple functions (unless the model herself is unable to answer), 
 You'll be given a message history."""
 
 function_dict = {  # TODO: separate functions for files 
-    'calculator': calculator,
     'wolfram_short_answer': wolfram_short_answer,
     'wolfram_full_answer': wolfram_full_answer,
     'google_short_answer': google_short_answer,
-    'google_full_answer': google_full_answer
+    'google_full_answer': google_full_answer,
+    'google_image': google_image
 }
 
 
 
 # TODO: files to context, auto-translate
-def llm_select_tool(messages: list | str) -> list:
+def llm_select_tool(messages: list | str, files: list = [], provider: Literal['groq', 'google'] = 'groq') -> list:
 
     if type(messages) == list:
-        user_message = '\n'.join(f'{i["role"]}: {i["content"]}' for i in messages)
+        user_message = 'History:'+'\n'.join(f'{i["role"]}: {i["content"]}' for i in messages[:-1])
+        user_message += f'\nUser ask: {messages[-1]["content"]}'
     else:
         user_message = messages
 
@@ -79,7 +82,8 @@ def llm_select_tool(messages: list | str) -> list:
         }
     ]
 
-    llm_answer = llm_api(messages=message_history, provider='groq')
+    llm_answer = llm_api(messages=message_history, files=files, provider=provider)
+
     answers = llm_answer.split('\n')
     tools = []
     for answer in answers:
@@ -92,23 +96,24 @@ def llm_select_tool(messages: list | str) -> list:
         if func_name in function_dict:
             tools.append({'func_name': func_name, 'func_input': func_input.strip()})
 
-    print('llm_select_tool', user_message, tools)
+    log(f'tools: {tools}, user_message: {user_message}')
     return tools
 
 
 
-async def execute_tool(func_name: str, func_input: str):
-    'Wrap a synchronous function into an asynchronous function'
-    return await asyncio.to_thread(function_dict[func_name], func_input)
+async def execute_tool(func_name, func_input: str):
+    if asyncio.iscoroutinefunction(func_name):
+        return await func_name(func_input)
+    else:
+        return await asyncio.to_thread(func_name, func_input)
 
 
 async def llm_use_tool(tools: list[dict]) -> tuple[str, list]:
     
     tasks = [
-        execute_tool(tool['func_name'], tool['func_input'])
-        for tool in tools
+        execute_tool(function_dict[tool['func_name']], tool['func_input']) for tool in tools
     ]
-    
+
     results = await asyncio.gather(*tasks)
 
     str_results = []
@@ -120,16 +125,16 @@ async def llm_use_tool(tools: list[dict]) -> tuple[str, list]:
             str_results.append(f"{tools[i]['func_name']}({tools[i]['func_input']}): {func_result[0]}")
             images.extend(func_result[1])
 
-    print('llm_use_tool', ', '.join(str_results))
+    result = '\n'.join(str_results)
+    log(f'{result}, {images}')
     
-    return '\n'.join(str_results), images
-
+    return result, images
 
 # TODO: FILES
-def llm_full_answer(messages: list, provider: Literal['groq', 'google'] = 'groq') -> str:
+def llm_full_answer(messages: list, files: list = [], provider: Literal['groq', 'google'] = 'groq') -> str:
 
     tools = llm_select_tool(messages=messages)
-    tool_result, images = asyncio.run(llm_use_tool(tools=tools))
+    tool_result, images = asyncio.run(llm_use_tool(tools=tools))  # TODO: await
 
 
     if type(messages) == str:
@@ -142,5 +147,8 @@ def llm_full_answer(messages: list, provider: Literal['groq', 'google'] = 'groq'
     if bool(tool_result) + bool(images):
         messages.append({'role': 'assistant', 'content': 'tool result:\n' + tool_result})
         
+    answer = llm_api(messages=messages, files=files, provider=provider)
 
-    return llm_api(messages=messages, provider=provider)
+    log(f'answer: {answer}, tool: {tool_result}, images: {images}')
+
+    return answer
