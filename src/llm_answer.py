@@ -3,15 +3,15 @@ from typing import Literal
 import asyncio
 
 if __name__ == '__main__' or '.' not in __name__:
-    from api import llm_api, calculator, wolfram_short_answer, wolfram_full_answer, google_short_answer, google_full_answer, google_image
+    from api import llm_api, calculator, wolfram_short_answer, wolfram_full_answer, google_short_answer, google_full_answer, google_image, youtube_sum
     from log import log
 
 else:
-    from .api import llm_api, calculator, wolfram_short_answer, wolfram_full_answer, google_short_answer, google_full_answer, google_image
+    from .api import llm_api, calculator, wolfram_short_answer, wolfram_full_answer, google_short_answer, google_full_answer, google_image, youtube_sum
     from .log import log
 
 
-system_prompt = 'You are a helpful assistant with access to Wolfram Alpha, Google, and calucaltor. You are a Telegram bot (don\'t use LaTeX) providing the best answers.'
+system_prompt = 'You are a helpful assistant with access to Wolfram Alpha, Google, and calucaltor. You are a Telegram bot (don\'t use LaTeX and use MarkDown available in telegram (bold, code, quote)) providing the best answers. User does not see system message'
 
 
 # TODO: let him decide for himself, not based on a machine solution.
@@ -35,6 +35,10 @@ functions_description = {
     'google_image': {
         'description': 'Pictures that pop up when you search. Use when the user asks to find a picture',
         'output_file': True
+    },
+    'youtube_sum': {
+        'description': 'Summarizes YouTube videos. Enter link in input',
+        'output_file': False
     }
 }
 
@@ -59,14 +63,15 @@ function_dict = {  # TODO: separate functions for files
     'wolfram_full_answer': wolfram_full_answer,
     'google_short_answer': google_short_answer,
     'google_full_answer': google_full_answer,
-    'google_image': google_image
+    'google_image': google_image,
+    'youtube_sum': youtube_sum
 }
 
 
 
 # TODO: files to context, auto-translate
 def llm_select_tool(messages: list | str, files: list = [], provider: Literal['groq', 'google'] = 'groq') -> list:
-
+    # TODO: multiple arguments for a function
     if type(messages) == list:
         user_message = 'History:'+'\n'.join(f'{i["role"]}: {i["content"]}' for i in messages[:-1])
         user_message += f'\nUser ask: {messages[-1]["content"]}'
@@ -82,14 +87,14 @@ def llm_select_tool(messages: list | str, files: list = [], provider: Literal['g
         }
     ]
 
-    llm_answer = llm_api(messages=message_history, files=files, provider=provider)
-
+    llm_answer = llm_api(messages=message_history, files=files, provider=provider) + '\n'
     answers = llm_answer.split('\n')
     tools = []
     for answer in answers:
         try:
-            func_name, func_input = answer.split(':')
-        except ValueError:
+            func_name = answer.split(':')[0]
+            func_input = ':'.join(answer.split(':')[1:])
+        except Exception as e:
             continue
         
         func_name = func_name.strip().lower()

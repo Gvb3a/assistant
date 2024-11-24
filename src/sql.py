@@ -64,7 +64,7 @@ def sql_select_history(id: int, n: int | str = 5):
     connection = sqlite3.connect('assistant.db') 
     cursor = connection.cursor()
 
-    role_content = cursor.execute('SELECT role, content FROM Messages WHERE user_id = ? ORDER BY time DESC LIMIT ? ', (id, n)).fetchall()    
+    role_content = cursor.execute('SELECT role, content FROM Messages WHERE user_id = ? ORDER BY time DESC LIMIT ?', (id, n)).fetchall()[::-1]   
     connection.close()
     
     return [{'role': i[0], 'content': i[1]} for i in role_content]

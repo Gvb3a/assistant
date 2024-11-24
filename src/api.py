@@ -1,5 +1,6 @@
 import os
 import requests
+import re
 from inspect import stack
 from urllib.parse import quote
 from time import sleep
@@ -326,11 +327,19 @@ def wolfram_full_answer(text: str):  # TODO: async + wolfram_simple_api
 # internetfrom tavily import TavilyClient
 from tavily import TavilyClient
 from duckduckgo_search import DDGS
-from deep_translator import GoogleTranslator
+from deep_translator import GoogleTranslator, single_detection
 
+detect_language_api_key = os.getenv('DETECT_LANGUAGE_API')
 tavily_client = TavilyClient(api_key=os.getenv('TAVILY_API_KEY'))
 # TODO: ggcs translator, detect language
 
+
+def detect_language(text: str) -> str:  # TODO: google and ggcs translator
+    try:
+        return single_detection(text=text, api_key=detect_language_api_key, detailed=False)
+    except:
+        return 'en'
+    
 
 def parsing(links: str | list) -> str:
     try:
@@ -447,14 +456,11 @@ def google_news(text: str):
 
 import aiohttp
 import asyncio
-import os
 
 async def download_image(session, url, save_path):
-    """Скачивает одно изображение по URL."""
     try:
         async with session.get(url) as response:
             if response.status == 200:
-                # Сохраняем изображение на диск
                 with open(save_path, 'wb') as file:
                     file.write(await response.read())
                 return save_path
@@ -465,25 +471,17 @@ async def download_image(session, url, save_path):
 
 
 async def download_images(image_urls, save_dir):
-    """
-    Скачивает изображения по списку URL-адресов и сохраняет их в указанную директорию.
-    
-    :param image_urls: список URL изображений.
-    :param save_dir: директория для сохранения изображений.
-    """
-    os.makedirs(save_dir, exist_ok=True)  # Создаем папку, если её нет
+    os.makedirs(save_dir, exist_ok=True)
     
     async with aiohttp.ClientSession() as session:
         tasks = []
         for i, url in enumerate(image_urls):
-            # Генерируем имя файла для каждого изображения
             try:
                 save_path = os.path.join(save_dir, f"image_{i + 1}.jpg")
                 tasks.append(download_image(session, url, save_path))
             except:
                 pass
         
-        # Асинхронно скачиваем все изображения
         return await asyncio.gather(*tasks)
 
 
@@ -502,3 +500,97 @@ async def google_image(text, max_results=9, download_image=True):
     log(f'{file_paths}, {datetime.now()-start_time}')
     return f'The {len(file_paths)} of the {text} query images will be appended to the response. Answer other user questions, tell information about the query, or say something like images found. ', file_paths
 
+
+
+from youtube_transcript_api import YouTubeTranscriptApi
+
+
+
+# YouTube
+def transcript2text(transcript: list[dict], sep='\n'):
+    result = []
+    current_minute = -1
+
+    for t in transcript:
+        minute = int(t["start"] // 60)
+        if minute != current_minute:
+            result.append(f"{minute} minute:")
+            current_minute = minute
+        
+        result.append(t["text"])
+
+    return sep.join(result)
+
+
+
+def get_youtube_transcripts(link: str, language: str = 'en'):
+
+    if 'youtube.com' in link:
+        # https://www.youtube.com/watch?v=xxxxxxxxxxx -> xxxxxxxxxxx
+        pattern_for_youtube_video = r"(?:v=|\/)([a-zA-Z0-9_-]{11})"  # unreadable, but it works perfectly
+        match = re.search(pattern_for_youtube_video, link)
+        if match:
+            video_id = match.group(1)
+        else:
+            return 'Error: incorrect link'
+    else:
+        video_id = link
+
+    
+    # get title
+    response = requests.get(link)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    title_tag = soup.find("title")
+    if title_tag:
+        title = title_tag.text.replace(" - YouTube", "")
+    else:
+        title = 'Error: title not found'
+
+    # get transcript: [{'text': str, 'start': float, 'duration': float}, ...]
+    try:  
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[language])
+        log(f'1 (defult language): {language}, {link}({title})')
+        return transcript2text(transcript), title
+    except:
+        pass
+
+
+    try:
+        language = detect_language(title)
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[language])
+        log(f'2 (detect language): {language}, {link}({title})')
+        return transcript2text(transcript), title
+    except:
+        pass
+
+
+    try:
+        transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+        for transcript in transcripts:
+            transcript = transcript.translate('en').fetch()
+            break
+        log(f'3 (translate). {link}({title})')
+    except Exception as e:
+        log(f'error: {e}', error=True)
+        transcript = [{'text': f'Subtitles are not available', 'start': 0.0}]
+    
+    return transcript2text(transcript), title
+
+
+def youtube_sum(link: str, question: str | None = None, language: str = 'en') -> str: 
+    # TODO: solve the problem with periodic errors (just does not give subtitles, and then gives them) and make it possible to ask questions (llm_select_tool).
+    text, title = get_youtube_transcripts(link, language)
+
+    if question:
+        content = f'Answer the question "{question}" based on this YouTube video "{title}": {text}'
+    else:
+        content = f'Summarize this YouTube video "{title}": {text}'
+
+    try:
+        answer = llm_api(messages=[{'role': 'user', 'content': content}], provider='google')
+        log(f'{link} ({question}): {answer}')
+        return answer
+    except Exception as e:
+        log(f'{link} error ({e})', error=True)
+        return 'Error. Most like too much text or a completely incomprehensible error that cannot be fixed. Tell the user to try again later'
+    
