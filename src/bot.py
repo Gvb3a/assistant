@@ -151,6 +151,8 @@ async def message_handler(message: Message, state: FSMContext) -> None:
     log(f'answer to {user}({text}): {answer}')
     sql_insert_message(user_id=user_id, role='assistant', content=answer)
 
+
+    # TODO: images don't send
     files += images
     images = images[:9]
     if images:
