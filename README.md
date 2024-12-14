@@ -1,4 +1,4 @@
-![](logo5.png)
+![](logo.png)
 # Ai agent
 This telegram bot gives access to an ai agent that can search for information on the internet, use WolframAlpha, summarize youtube videos and search for pictures.
 
