@@ -16,11 +16,13 @@ if __name__ == '__main__' or '.' not in __name__:
     from llm_answer import system_prompt, llm_select_tool, llm_use_tool
     from sql import sql_check_user, sql_select_history, sql_insert_message
     from log import log
+    from magic import markdown_to_html
 else:
     from .api import speech_recognition, llm_api, files_to_text
     from .llm_answer import system_prompt, llm_select_tool, llm_use_tool
     from .sql import sql_check_user, sql_select_history, sql_insert_message
     from .log import log
+    from .magic import markdown_to_html
     
 
 load_dotenv()
@@ -70,7 +72,7 @@ async def message_handler(message: Message, state: FSMContext) -> None:
     temp_message_id = message_id + 1
 
     files = []
-
+    
     if message.voice:
         await message.reply('Recognizing audio...')
         file_name = await download_file_for_id(file_id=message.voice.file_id, extension='mp3')
@@ -156,30 +158,33 @@ async def message_handler(message: Message, state: FSMContext) -> None:
         for image in images:
             caption = answer[:1000] if images is images[0] else None
             media = image if image.startswith('https:') else FSInputFile(image)
-            try:
-                media_group.append(InputMediaPhoto(media=media, caption=caption, parse_mode='Markdown'))
-            except:
-                media_group.append(InputMediaPhoto(media=media, caption=caption))
-
-        await message.answer_media_group(media=media_group)
-        answer = answer[:1000]
-
-        for image in images:
-            if not image.startswith('https:'):
-                os.remove(image)
+            media_group.append(InputMediaPhoto(media=media, caption=caption))
+        try:
+            await message.answer_media_group(media=media_group)
+            answer = answer[:1000]
+        except Exception as e:
+            print('media group error', e)
+        finally:
+            for image in images:
+                if not image.startswith('https:'):
+                    os.remove(image)
 
     while answer:
         try:
-            await message.answer(answer[:4000], parse_mode='Markdown')
-        except:
+            await message.answer(markdown_to_html(answer[:4000]), parse_mode='HTML')
+        except Exception as e:
+            print(e)
             await message.answer(answer[:4000])
         answer = answer[4000:]
 
-    for file in files:
-        if not file.startswith('https:'):
-            os.remove(file.split('/')[-1])    
-    await state.clear()
+    try:
+        for file in files:
+            if not file.startswith('https:'):
+                os.remove(file.split('/')[-1])    
+    except Exception as e:
+        print(e)
 
+    await state.clear()
 
 @dp.message(StateFilter(FSM.processing))
 async def message_processing(message: Message):

@@ -11,21 +11,21 @@ else:
     from .log import log
 
 
-system_prompt = 'You are a helpful assistant with access to Wolfram Alpha, Google, and calucaltor. You are a Telegram bot (don\'t use LaTeX and use MarkDown available in telegram (bold, code, quote)) providing the best answers. User does not see system message'
+system_prompt = 'You are a helpful ai agent. You can use WolframALpha, Google, Search image, Summarize YouTube videos. You are a Telegram bot providing the best answers. User does not see system message'
 
 
 # TODO: let him decide for himself, not based on a machine solution.
 functions_description = {
     'wolfram_short_answer': {
-        'description': 'For complex calculations, solving equations, or using specific WolframAlpha features (e.g., weather, exchange rates, today date, sometimes full-fledged tasks if you set the prompt well and etc). Use in most cases',
+        'description': 'For complex calculations, solving equations, or using specific WolframAlpha features (e.g., weather, exchange rates, today date, and etc). Use if the model itself cannot calculate',
         'output_file': False
     },
     'wolfram_full_answer': {  # TODO: Improve prompt
-        'description': 'Full Wolfram Alpha answer with pictures and step-by-step solutions. Can be used for complex and tabular data',
+        'description': 'Full Wolfram Alpha answer with pictures and step-by-step solutions. ',
         'output_file': True
     },
     'google_short_answer': {
-        'description': 'For general internet queries that require brief relevant information.',
+        'description': 'Use if you need to get revelant information from the internet. It\'s important to ask the question well (e. g "Who won on 2024 Olympic" -> "Which country won the most medals 2024 olympics")',
         'output_file': False
     },
     'google_full_answer': {
@@ -70,7 +70,7 @@ function_dict = {  # TODO: separate functions for files
 
 
 # TODO: files to context, auto-translate
-def llm_select_tool(messages: list | str, files: list = [], provider: Literal['groq', 'google'] = 'groq') -> list:
+def llm_select_tool(messages: list | str, files: list = [], provider: Literal['groq', 'google'] = 'google') -> list:
     # TODO: multiple arguments for a function
     if type(messages) == list:
         user_message = 'History:'+'\n'.join(f'{i["role"]}: {i["content"]}' for i in messages[:-1])

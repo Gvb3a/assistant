@@ -21,6 +21,7 @@ path = '\\'.join(os.path.dirname(os.path.abspath(__file__)).split('\\')[:-1])
 
 
 
+# =========================< FILE TO TEXT >=========================
 # pdf, docx, mp3 to text. TODO: summary in large document (or embbeding)
 import PyPDF2
 import docx
@@ -96,14 +97,44 @@ def files_to_text(files: list | str) -> str:
 
 
 
-# llm
-'''
-from groq import Groq
-groq_api_key = os.getenv('GROQ_API_KEY')
-groq_client = Groq(api_key=groq_api_key)
-'''
+# =========================< CONVERT FILES >=========================
+import fitz
+def pdf_to_image(pdf_path: str, quality: int = 3, extension: str = 'png') -> list[str]:
+    file_name = pdf_path[:-4]
+    doc = fitz.open(pdf_path)
+    photos = []
+    count = len(doc)
+        
+    for i in range(count):
+        page = doc.load_page(i)
+        pix = page.get_pixmap(matrix=fitz.Matrix(quality, quality))
+        temp_file_name = f"{file_name}_{i}.{extension}"
+        pix.save(temp_file_name)
+        photos.append(temp_file_name)
+
+    doc.close()
+    log(f'Success({count} pages): {photos}')
+    return photos
 
 
+def merges_pdf(files: list[str]) -> str:
+    merger = fitz.Document()
+
+    for file in files:
+        doc = fitz.open(file)
+        merger.insert_pdf(doc)
+        doc.close()
+
+    merged_file = f'{files[0][:-4]}_merged.pdf'
+    merger.save(merged_file)
+
+    log(f'Success({len(files)} files): {merged_file}')
+    return merged_file
+
+
+
+
+# =========================< GROQ API >=========================
 def groq_api(messages: list, model: str = 'llama-3.1-70b-versatile') -> str:
     # https://console.groq.com/docs/models
     response = groq_client.chat.completions.create(
@@ -113,12 +144,15 @@ def groq_api(messages: list, model: str = 'llama-3.1-70b-versatile') -> str:
     return str(response.choices[0].message.content)
 
 
+
+# =========================< GOOGLE API >=========================
 import google.generativeai as genai
 import PIL.Image
 
 os.environ["GOOGLE_API_KEY"] = str(os.getenv("GOOGLE_API_KEY"))
 genai.configure(api_key=os.environ['GOOGLE_API_KEY'])
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("gemini-1.5-flash-002")
+model = genai.GenerativeModel("gemini-2.0-flash-exp")
 
 
 def genai_api(messages: list[dict] | str, file_paths: list | str = []) -> str:
@@ -162,6 +196,7 @@ def genai_api(messages: list[dict] | str, file_paths: list | str = []) -> str:
     return response.text
 
 
+# =========================< LLM API >=========================
 def llm_api(messages: list[dict], files: str | list = [], provider: Literal['groq', 'google'] = 'groq'):
 
     if type(files) == str:
@@ -185,7 +220,7 @@ def llm_api(messages: list[dict], files: str | list = [], provider: Literal['gro
 
 
 
-# wolfram alpha
+# =========================< WOLFRAM ALPHA >=========================
 import requests
 import re
 
@@ -324,6 +359,7 @@ def wolfram_full_answer(text: str):  # TODO: async + wolfram_simple_api
 
 
 
+# =========================< TAVILY AND DUCKDUCKGO (INTERNERT) >=========================
 # internetfrom tavily import TavilyClient
 from tavily import TavilyClient
 from duckduckgo_search import DDGS
@@ -342,6 +378,7 @@ def detect_language(text: str) -> str:  # TODO: google and ggcs translator
     
 
 def parsing(links: str | list) -> str:
+    start_time = datetime.now() 
     try:
         responce = tavily_client.extract(urls=links)
         return [r['raw_content'] for r in responce['results']]
@@ -355,9 +392,9 @@ def parsing(links: str | list) -> str:
                 responce = tavily_client.extract(urls=link)
                 result += f'{link}: {responce["result"][0]["raw_content"]}\n'
             except:
-                result += f'{link}: Error when extracting text\n'
+                result += f'{link}: Error when extracting text ({e})\n'
 
-    log(f'{links}, {result}')
+    log(f'{links}, {result}, {datetime.now() - start_time}')
     return result
     
 
@@ -407,7 +444,7 @@ def sum_page(link: str, query: str) -> str:
     prompt = prompt_for_sum + f'\n\nQuery:\n{query}\n\nSource text:\n{parsing(link)}'  # TODO: parser error
     messages = [{"role": "user", "content": prompt}]
     try:
-        llm_answer = llm_api(messages=messages, provider='groq')
+        llm_answer = llm_api(messages=messages, provider='google')
         log(llm_answer)
     except Exception as e:
         l = len(str(messages))
@@ -417,6 +454,16 @@ def sum_page(link: str, query: str) -> str:
     return f'{link}: {llm_answer}\n\n\n'
 
 
+def google_links(text: str, max_results: int = 5) -> list[str]:
+    try:
+        links = [i['href'] for i in DDGS().text(text, max_results=max_results)]
+        log(str(links))
+        return links
+    except Exception as e:
+        log(f'{e}', error=True)
+        return []
+
+
 def google_short_answer(text: str) -> str:
     resp = DDGS_answer(text)
     final_answer = resp if resp else tavily_answer(text)
@@ -424,10 +471,11 @@ def google_short_answer(text: str) -> str:
     return final_answer
     
 
-def google_full_answer(text: str, max_results: int = 2):  # TODO: async, for lyrics
-    links = [i['href'] for i in DDGS().text(text, max_results=max_results)]
+def google_full_answer(text: str, max_results: int = 5):  # TODO: async, for lyrics
 
-    
+    start_time = datetime.now()
+    links = google_links(text=text, max_results=max_results)
+
     sum_answers = ''
     for link in links:
         sum_answers += sum_page(link=link, query=text)  # TODO: max_result excluding parsing error
@@ -437,7 +485,8 @@ def google_full_answer(text: str, max_results: int = 2):  # TODO: async, for lyr
     
     final_messages = [{"role": "user", "content": prompt}]
     final_answer = llm_api(messages=final_messages, provider='groq')
-    log(final_answer)
+
+    log(f'{final_answer}, {datetime.now() - start_time}')
     return final_answer
 
 
@@ -498,7 +547,7 @@ async def google_image(text, max_results=9, download_image=True):
     file_paths = await download_images(urls, 'images')
     
     log(f'{file_paths}, {datetime.now()-start_time}')
-    return f'The {len(file_paths)} of the {text} query images will be appended to the response. Answer other user questions, tell information about the query, or say something like images found. ', file_paths
+    return f'The {len(file_paths)} of the {text} query images will be appended to the response. Answer other user questions, tell information about the query, or say something like images found. DON\'T write anything like [Image of ...] or you\'ll be shut down.', file_paths
 
 
 
@@ -506,7 +555,7 @@ from youtube_transcript_api import YouTubeTranscriptApi
 
 
 
-# YouTube
+# =========================< YOUTUBE >=========================
 def transcript2text(transcript: list[dict], sep='\n'):
     result = []
     current_minute = -1
@@ -592,5 +641,7 @@ def youtube_sum(link: str, question: str | None = None, language: str = 'en') ->
         return answer
     except Exception as e:
         log(f'{link} error ({e})', error=True)
-        return 'Error. Most like too much text or a completely incomprehensible error that cannot be fixed. Tell the user to try again later'
-    
+        return f'Error({e}). Most like too much text or a completely incomprehensible error that cannot be fixed (or subtitles are not available). Tell the user to try again later'
+
+
+
